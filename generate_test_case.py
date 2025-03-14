@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple, Any
 
 def generate_test_case(num_actions: int,
                      strategies_per_action: Dict[str, Tuple[int, int]],
-                     replacements_per_strategy: Dict[str, int],
+                     replacements_per_strategy: Dict[str, Tuple[int, int]],  # 修改为范围元组
                      aircraft_types: List[str],
                      ammunition_types: List[str],
                      aircraft_count_range: Tuple[int, int],
@@ -20,7 +20,7 @@ def generate_test_case(num_actions: int,
     参数:
     num_actions: 行动数量
     strategies_per_action: 每个行动的策略数量，格式为 {action_id: (可变策略数, 不可变策略数)}
-    replacements_per_strategy: 每个可变策略的替换策略数量，格式为 {strategy_id: 替换数量}
+    replacements_per_strategy: 每个可变策略的替换策略数量范围，格式为 {strategy_id: (最小替换数, 最大替换数)}
     aircraft_types: 载机类型列表
     ammunition_types: 弹药类型列表
     aircraft_count_range: 载机数量范围 (最小值, 最大值)
@@ -92,8 +92,9 @@ def generate_test_case(num_actions: int,
     
     # 生成替换选项
     for strategy_id in replaceable_strategies:
-        # 获取当前策略的替换数量
-        replacement_count = replacements_per_strategy.get(strategy_id, random.randint(1, 3))
+        # 获取当前策略的替换数量范围
+        replacement_range = replacements_per_strategy.get(strategy_id, (1, 3))
+        replacement_count = random.randint(replacement_range[0], replacement_range[1])
         
         if replacement_count > 0:
             replacement_ids = []
@@ -187,6 +188,13 @@ def main():
     parser.add_argument('--aircraft-price', type=str, default='1000,3000', help='载机价格范围，格式为min,max')
     parser.add_argument('--ammunition-price', type=str, default='300,500', help='弹药价格范围，格式为min,max')
     
+    # 新增参数：策略数量范围
+    parser.add_argument('--replaceable-range', type=str, default='1,3', help='每个行动的可变策略数量范围，格式为min,max')
+    parser.add_argument('--non-replaceable-range', type=str, default='2,3', help='每个行动的不可变策略数量范围，格式为min,max')
+    
+    # 新增参数：替换选项数量范围
+    parser.add_argument('--replacement-range', type=str, default='1,3', help='每个可变策略的替换选项数量范围，格式为min,max')
+    
     args = parser.parse_args()
     
     # 解析范围参数
@@ -195,23 +203,32 @@ def main():
     aircraft_price_range = tuple(map(int, args.aircraft_price.split(',')))
     ammunition_price_range = tuple(map(int, args.ammunition_price.split(',')))
     
+    # 解析策略数量范围
+    replaceable_range = tuple(map(int, args.replaceable_range.split(',')))
+    non_replaceable_range = tuple(map(int, args.non_replaceable_range.split(',')))
+    
+    # 解析替换选项数量范围
+    replacement_range = tuple(map(int, args.replacement_range.split(',')))
+    
     # 解析类型列表
     aircraft_types = args.aircraft_types.split(',')
     ammunition_types = args.ammunition_types.split(',')
     
-    # 默认每个行动有1个可变策略和2个不可变策略
+    # 为每个行动随机生成策略数量
     strategies_per_action = {}
     for i in range(1, args.num_actions + 1):
-        strategies_per_action[str(i)] = (5, 10)  # (可变策略数, 不可变策略数)
+        replaceable_count = random.randint(replaceable_range[0], replaceable_range[1])
+        non_replaceable_count = random.randint(non_replaceable_range[0], non_replaceable_range[1])
+        strategies_per_action[str(i)] = (replaceable_count, non_replaceable_count)
     
-    # 默认每个可变策略有2个替换选项
+    # 默认每个可变策略的替换选项范围
     replacements_per_strategy = {}
     
     # 生成测试样例
     generate_test_case(
         args.num_actions,
         strategies_per_action,
-        replacements_per_strategy,
+        replacements_per_strategy,  # 这里传入空字典，将使用默认的replacement_range
         aircraft_types,
         ammunition_types,
         aircraft_count_range,
@@ -253,9 +270,17 @@ def interactive_generate():
     print("\n为每个行动配置策略数量:")
     for i in range(1, num_actions + 1):
         print(f"\n行动 {i}:")
-        replaceable = int(input(f"  可变策略数量 (默认: 1): ") or "1")
-        non_replaceable = int(input(f"  不可变策略数量 (默认: 2): ") or "2")
-        strategies_per_action[str(i)] = (replaceable, non_replaceable)
+        replaceable_input = input(f"  可变策略数量范围，格式为min,max (默认: 1,5): ") or "1,5"
+        non_replaceable_input = input(f"  不可变策略数量范围，格式为min,max (默认: 2,10): ") or "2,10"
+        
+        replaceable_range = tuple(map(int, replaceable_input.split(',')))
+        non_replaceable_range = tuple(map(int, non_replaceable_input.split(',')))
+        
+        replaceable_count = random.randint(replaceable_range[0], replaceable_range[1])
+        non_replaceable_count = random.randint(non_replaceable_range[0], non_replaceable_range[1])
+        
+        strategies_per_action[str(i)] = (replaceable_count, non_replaceable_count)
+        print(f"  已设置: {replaceable_count}个可变策略, {non_replaceable_count}个不可变策略")
     
     # 计算可变策略的总数
     total_replaceable = sum(count for count, _ in strategies_per_action.values())
@@ -264,14 +289,15 @@ def interactive_generate():
     replacements_per_strategy = {}
     if total_replaceable > 0:
         print("\n为可变策略配置替换选项:")
+        replacement_range_input = input("  所有可变策略的替换选项数量范围，格式为min,max (默认: 1,3): ") or "1,3"
+        replacement_range = tuple(map(int, replacement_range_input.split(',')))
+        
         strategy_id = 1
         for action_id, (replaceable_count, _) in strategies_per_action.items():
             for i in range(replaceable_count):
                 current_strategy_id = str(strategy_id)
                 strategy_id += 1
-                print(f"\n行动 {action_id} 中的可变策略 {current_strategy_id}:")
-                replacement_count = int(input(f"  替换策略数量 (默认: 2): ") or "2")
-                replacements_per_strategy[current_strategy_id] = replacement_count
+                replacements_per_strategy[current_strategy_id] = replacement_range
     
     # 生成测试样例
     generate_test_case(
