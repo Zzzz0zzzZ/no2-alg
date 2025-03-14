@@ -4,6 +4,7 @@ import os
 import glob
 import random
 import copy
+import matplotlib.pyplot as plt  # 添加matplotlib库用于绘图
 from typing import Dict, List, Tuple, Any, Set
 
 class Strategy:
@@ -99,13 +100,14 @@ class ActionList:
         """
         self.replacement_options[strategy_id] = replacement_strategies
 
-    def optimize(self, aircraft_constraints, ammunition_constraints):
+    def optimize(self, aircraft_constraints, ammunition_constraints, plot_convergence=False):
         """
         使用遗传算法优化作战行动清单，找出在资源约束下总价格最低的替换方案
         
         参数:
         aircraft_constraints: 字典，键为载机种类，值为最大可用数量
         ammunition_constraints: 字典，键为弹药种类，值为最大可用数量
+        plot_convergence: 是否绘制收敛曲线
         
         返回:
         best_combination: 最优替换方案，字典，键为策略ID，值为替换后的策略
@@ -160,12 +162,17 @@ class ActionList:
             return {}, initial_price
         
         # 使用遗传算法找出最优替换方案
-        best_combination, best_price = self._genetic_algorithm_optimize(
+        best_combination, best_price, convergence_data = self._genetic_algorithm_optimize(
             replaceable_strategies, 
             aircraft_constraints, 
             ammunition_constraints,
-            initial_price
+            initial_price,
+            plot_convergence
         )
+        
+        # 如果需要绘制收敛曲线
+        if plot_convergence and convergence_data:
+            self._plot_convergence_curve(convergence_data)
         
         # 检查是否找到了满足约束的方案
         if best_price == float('inf'):
@@ -191,7 +198,7 @@ class ActionList:
         
         return best_combination, best_price
     
-    def _genetic_algorithm_optimize(self, replaceable_strategies, aircraft_constraints, ammunition_constraints, initial_price):
+    def _genetic_algorithm_optimize(self, replaceable_strategies, aircraft_constraints, ammunition_constraints, initial_price, plot_convergence=False):
         """
         使用遗传算法寻找最优替换方案
         
@@ -200,16 +207,18 @@ class ActionList:
         aircraft_constraints: 载机约束
         ammunition_constraints: 弹药约束
         initial_price: 初始方案总价格
+        plot_convergence: 是否记录收敛数据
         
         返回:
         best_combination: 最优替换方案
         best_price: 最优方案总价格
+        convergence_data: 收敛数据，如果plot_convergence为True
         """
         # 遗传算法参数
-        population_size = 50  # 种群大小
+        population_size = 100  # 种群大小
         generations = 200     # 迭代代数
         mutation_rate = 0.1   # 变异率
-        elite_size = 5        # 精英数量
+        elite_size = 10        # 精英数量
         
         # 初始化种群
         population = self._initialize_population(replaceable_strategies, population_size)
@@ -219,6 +228,9 @@ class ActionList:
         best_fitness = float('-inf')
         best_price = float('inf')
         best_combination = {}
+        
+        # 用于记录收敛曲线数据
+        convergence_data = [] if plot_convergence else None
         
         # 迭代进化
         for generation in range(generations):
@@ -232,16 +244,38 @@ class ActionList:
             fitness_scores.sort(key=lambda x: x[1], reverse=True)
             
             # 更新最优解
+            current_best_valid_fitness = float('-inf')
+            current_best_valid_price = float('inf')
+            
             for individual, fitness, price, valid in fitness_scores:
                 if valid and price < best_price:
                     best_individual = individual
                     best_fitness = fitness
                     best_price = price
                     best_combination = self._decode_individual(individual, replaceable_strategies)
+                
+                if valid and fitness > current_best_valid_fitness:
+                    current_best_valid_fitness = fitness
+                    current_best_valid_price = price
             
-            # 如果已经找到满足约束的解，且价格低于初始方案，可以提前结束
-            if best_price < initial_price and generation > 10:
-                break
+            # 记录当前代的最佳适应度和价格
+            if plot_convergence:
+                # 如果当前代有有效解，记录最佳有效解的价格，否则记录无穷大
+                convergence_data.append((generation, current_best_valid_price if current_best_valid_price != float('inf') else None))
+            
+            # 判断是否可以提前终止迭代
+            # 使用更合理的终止条件：连续多代最优解没有改进，或者找到了显著优于初始方案的解
+            # TODO
+            if generation > 150:  # 至少运行100代
+                # 如果找到了比初始方案至少优20%的解，可以提前终止
+                # if best_price < initial_price * 0.8:
+                #     break
+                # 或者如果最近30代没有改进，也可以提前终止
+                if generation > 30 and convergence_data and all(
+                    abs(data[1] - best_price) < 0.001 * best_price if data[1] is not None else False 
+                    for data in convergence_data[-30:]
+                ):
+                    break
             
             # 选择精英个体
             elites = [fs[0] for fs in fitness_scores[:elite_size]]
@@ -261,10 +295,57 @@ class ActionList:
         
         # 如果没有找到满足约束的解，返回空方案
         if best_price == float('inf'):
-            return {}, float('inf')
+            return {}, float('inf'), convergence_data
         
-        return best_combination, best_price
+        return best_combination, best_price, convergence_data
     
+    def _plot_convergence_curve(self, convergence_data):
+        """
+        绘制遗传算法的收敛曲线
+        
+        参数:
+        convergence_data: 收敛数据，包含(代数, 价格)元组的列表
+        """
+        generations = [data[0] for data in convergence_data]
+        prices = [data[1] for data in convergence_data]
+        print("$"*50)
+        print(len(generations))
+        # 处理无效解（价格为None的情况）
+        valid_gens = []
+        valid_prices = []
+        for gen, price in zip(generations, prices):
+            if price is not None:
+                valid_gens.append(gen)
+                valid_prices.append(price)
+        
+        plt.figure(figsize=(10, 6))
+        
+        # 如果有有效解，绘制有效解的收敛曲线
+        if valid_prices:
+            plt.plot(valid_gens, valid_prices, 'b-', label='有效解价格')
+            plt.scatter(valid_gens, valid_prices, color='blue', s=20)
+        
+        # 标记无效解的代数
+        invalid_gens = [gen for gen, price in zip(generations, prices) if price is None]
+        if invalid_gens:
+            plt.scatter(invalid_gens, [max(valid_prices) * 1.1 if valid_prices else 1000] * len(invalid_gens), 
+                       color='red', marker='x', label='无有效解的代数')
+        
+        plt.title('遗传算法收敛曲线')
+        plt.xlabel('代数')
+        plt.ylabel('最佳有效解价格')
+        plt.grid(True)
+        plt.legend()
+        
+        # 保存图像
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        plt.savefig(os.path.join(output_dir, 'convergence_curve.png'))
+        print(f"收敛曲线已保存至: {os.path.join(output_dir, 'convergence_curve.png')}")
+        plt.close()
+
     def _initialize_population(self, replaceable_strategies, population_size):
         """
         初始化种群
@@ -520,12 +601,13 @@ def load_test_case(file_path):
         return None, None, None
 
 # 运行单个测试用例
-def run_test_case(file_path):
+def run_test_case(file_path, plot_convergence=True):
     """
     运行单个测试用例
     
     参数:
     file_path: 测试用例文件路径
+    plot_convergence: 是否绘制收敛曲线
     """
     print(f"\n运行测试用例: {os.path.basename(file_path)}")
     print("-" * 50)
@@ -535,8 +617,12 @@ def run_test_case(file_path):
         print(f"无法加载测试用例: {file_path}")
         return
     
-    # 优化
-    best_combination, total_price = action_list.optimize(aircraft_constraints, ammunition_constraints)
+    # 优化，并传入plot_convergence参数
+    best_combination, total_price = action_list.optimize(
+        aircraft_constraints, 
+        ammunition_constraints,
+        plot_convergence=plot_convergence
+    )
     
     # 打印原始策略
     print("\n原始策略:")
@@ -600,8 +686,14 @@ def main():
     
     print(f"找到 {len(test_case_files)} 个测试用例文件")
     
+    # 添加命令行参数解析
+    import argparse
+    parser = argparse.ArgumentParser(description='基于遗传算法的策略优化')
+    parser.add_argument('--no-plot', action='store_true', help='不绘制收敛曲线')
+    args = parser.parse_args()
+    
     for file_path in test_case_files:
-        run_test_case(file_path)
+        run_test_case(file_path, plot_convergence=not args.no_plot)
 
 # 运行测试
 if __name__ == "__main__":
