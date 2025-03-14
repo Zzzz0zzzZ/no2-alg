@@ -314,8 +314,7 @@ class ActionList:
         """
         generations = [data[0] for data in convergence_data]
         prices = [data[1] for data in convergence_data]
-        print("$"*50)
-        print(len(generations))
+        print("迭代轮次: ", len(generations))
         # 处理无效解（价格为None的情况）
         valid_gens = []
         valid_prices = []
