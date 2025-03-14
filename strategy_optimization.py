@@ -1,4 +1,7 @@
 # 策略优化算法实现
+import json
+import os
+import glob
 
 class Strategy:
     def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0):
@@ -281,99 +284,98 @@ class ActionList:
         return f"ActionList (行动数: {len(self.actions)})"
 
 
-# 测试代码
-def main():
-    # 创建策略
-    # 不可替换的策略
-    strategy1 = Strategy("1", False,
-                         aircraft={"A型": (2, 1000), "B型": (1, 2000)},
-                         ammunition={"导弹X": (5, 500), "炸弹Y": (3, 300)})
+# 从JSON文件加载测试用例
+def load_test_case(file_path):
+    """
+    从JSON文件加载测试用例
+    
+    参数:
+    file_path: JSON文件路径
+    
+    返回:
+    action_list: 构建好的ActionList对象
+    aircraft_constraints: 载机约束
+    ammunition_constraints: 弹药约束
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # 创建策略对象
+        strategies = {}
+        for strategy_id, strategy_data in data['strategies'].items():
+            aircraft = {k: tuple(v) for k, v in strategy_data.get('aircraft', {}).items()}
+            ammunition = {k: tuple(v) for k, v in strategy_data.get('ammunition', {}).items()}
+            strategies[strategy_id] = Strategy(
+                strategy_id,
+                strategy_data.get('replaceable', False),
+                aircraft=aircraft,
+                ammunition=ammunition
+            )
+        
+        # 创建行动对象
+        actions = {}
+        for action_id, strategy_ids in data['actions'].items():
+            action = Action(action_id)
+            for strategy_id in strategy_ids:
+                if strategy_id in strategies:
+                    action.add_strategy(strategies[strategy_id])
+                else:
+                    print(f"警告: 策略 {strategy_id} 未在策略列表中定义")
+            actions[action_id] = action
+        
+        # 创建作战行动清单
+        action_list = ActionList()
+        for action in actions.values():
+            action_list.add_action(action)
+        
+        # 添加替换选项
+        for strategy_id, replacement_ids in data.get('replacement_options', {}).items():
+            replacement_strategies = [strategies[rid] for rid in replacement_ids if rid in strategies]
+            if replacement_strategies:
+                action_list.add_replacement_option(strategy_id, replacement_strategies)
+        
+        # 获取约束条件
+        constraints = data.get('constraints', {})
+        aircraft_constraints = constraints.get('aircraft', {})
+        ammunition_constraints = constraints.get('ammunition', {})
+        
+        return action_list, aircraft_constraints, ammunition_constraints
+    
+    except Exception as e:
+        print(f"加载测试用例 {file_path} 时出错: {e}")
+        return None, None, None
 
-    strategy3 = Strategy("3", False,
-                         aircraft={"A型": (1, 1000), "C型": (2, 3000)},
-                         ammunition={"导弹X": (3, 500), "炸弹Z": (4, 400)})
-
-    strategy6 = Strategy("6", False,
-                         aircraft={"B型": (2, 2000), "C型": (1, 3000)},
-                         ammunition={"炸弹Y": (2, 300), "炸弹Z": (3, 400)})
-
-    # 可替换的策略
-    strategy2 = Strategy("2", True,
-                         aircraft={"A型": (3, 1000), "B型": (1, 2000)},
-                         ammunition={"导弹X": (4, 500), "炸弹Y": (2, 300)})
-
-    strategy4 = Strategy("4", True,
-                         aircraft={"B型": (2, 2000), "C型": (1, 3000)},
-                         ammunition={"导弹X": (3, 500), "炸弹Z": (2, 400)})
-
-    strategy5 = Strategy("5", True,
-                         aircraft={"A型": (1, 1000), "C型": (2, 3000)},
-                         ammunition={"炸弹Y": (4, 300), "炸弹Z": (3, 400)})
-
-    # 替换选项
-    strategy_a = Strategy("a", False,
-                          aircraft={"A型-G": (2, 900), "B型": (2, 2000)},
-                          ammunition={"导弹X": (3, 500), "炸弹Y": (3, 300)})
-
-    strategy_b = Strategy("b", False,
-                          aircraft={"A型": (2, 1000), "B型": (2, 2000)},
-                          ammunition={"导弹X": (3, 500), "炸弹Y": (3, 300)})
-
-    strategy_c = Strategy("c", False,
-                          aircraft={"A型": (2, 1000), "B型": (2, 2000)},
-                          ammunition={"导弹X": (3, 500), "炸弹Y": (3, 300)})
-
-    strategy_d = Strategy("d", False,
-                          aircraft={"A型": (2, 1000), "C型": (1, 3000)},
-                          ammunition={"导弹X": (2, 500), "炸弹Z": (3, 400)})
-
-    strategy_e = Strategy("e", False,
-                          aircraft={"B型": (1, 2000), "C型": (2, 3000)},
-                          ammunition={"导弹X": (4, 500), "炸弹Y": (1, 300)})
-
-    strategy_f = Strategy("f", False,
-                          aircraft={"A型": (2, 1000), "B型": (1, 2000)},
-                          ammunition={"炸弹Y": (2, 300), "炸弹Z": (2, 400)})
-
-    # 创建行动
-    action1 = Action("1")
-    action1.add_strategy(strategy1)
-    action1.add_strategy(strategy2)
-    action1.add_strategy(strategy3)
-
-    action2 = Action("2")
-    action2.add_strategy(strategy4)
-    action2.add_strategy(strategy5)
-    action2.add_strategy(strategy6)
-
-    # 创建作战行动清单
-    action_list = ActionList()
-    action_list.add_action(action1)
-    action_list.add_action(action2)
-
-    # 添加替换选项
-    action_list.add_replacement_option("2", [strategy_a, strategy_b, strategy_c])
-    action_list.add_replacement_option("4", [strategy_d, strategy_e])
-    action_list.add_replacement_option("5", [strategy_f])
-
-    # 设置资源约束
-    aircraft_constraints = {"A型": 8, "B型": 6, "C型": 5}
-    ammunition_constraints = {"导弹X": 15, "炸弹Y": 10, "炸弹Z": 12}
-
+# 运行单个测试用例
+def run_test_case(file_path):
+    """
+    运行单个测试用例
+    
+    参数:
+    file_path: 测试用例文件路径
+    """
+    print(f"\n运行测试用例: {os.path.basename(file_path)}")
+    print("-" * 50)
+    
+    action_list, aircraft_constraints, ammunition_constraints = load_test_case(file_path)
+    if not action_list or not aircraft_constraints or not ammunition_constraints:
+        print(f"无法加载测试用例: {file_path}")
+        return
+    
     # 优化
     best_combination, total_price = action_list.optimize(aircraft_constraints, ammunition_constraints)
-
+    
     # 打印原始策略
-    print("原始策略:")
+    print("\n原始策略:")
     for action in action_list.actions:
         print(f"行动 {action.id}:")
         for strategy in action.strategies:
             print(f"  - {strategy}")
-
+    
     # 打印最优替换方案
     print("\n最优替换方案:")
     print(f"总价格: {total_price}")
-
+    
     for action in action_list.actions:
         print(f"行动 {action.id}:")
         for strategy in action.strategies:
@@ -382,33 +384,51 @@ def main():
                 print(f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price})")
             else:
                 print(f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}")
-
+    
     # 打印资源使用情况
     print("\n资源使用情况:")
     total_aircraft_usage = {}
     total_ammunition_usage = {}
-
+    
     for action in action_list.actions:
         for strategy in action.strategies:
             if strategy.replaceable and strategy.id in best_combination:
                 strategy = best_combination[strategy.id]
-
+            
             aircraft_usage, ammunition_usage = strategy.get_resource_usage()
-
+            
             for aircraft_type, count in aircraft_usage.items():
                 total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type, 0) + count
-
+            
             for ammo_type, count in ammunition_usage.items():
                 total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
-
+    
     print("载机使用:")
     for aircraft_type, count in total_aircraft_usage.items():
         print(f"  - {aircraft_type}: {count}/{aircraft_constraints.get(aircraft_type, '无限制')}")
-
+    
     print("弹药使用:")
     for ammo_type, count in total_ammunition_usage.items():
         print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
+    
+    print("-" * 50)
 
+# 主函数
+def main():
+    """
+    主函数，运行所有测试用例
+    """
+    test_case_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'testcases')
+    test_case_files = glob.glob(os.path.join(test_case_dir, '*.json'))
+    
+    if not test_case_files:
+        print(f"未找到测试用例文件，请确保 {test_case_dir} 目录下有 .json 文件")
+        return
+    
+    print(f"找到 {len(test_case_files)} 个测试用例文件")
+    
+    for file_path in test_case_files:
+        run_test_case(file_path)
 
 # 运行测试
 if __name__ == "__main__":

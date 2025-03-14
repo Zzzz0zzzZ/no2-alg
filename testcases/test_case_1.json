@@ -1,0 +1,157 @@
+{
+  "strategies": {
+    "1": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [2, 1000],
+        "B型": [1, 2000]
+      },
+      "ammunition": {
+        "导弹X": [5, 500],
+        "炸弹Y": [3, 300]
+      }
+    },
+    "2": {
+      "replaceable": true,
+      "aircraft": {
+        "A型": [3, 1000],
+        "B型": [1, 2000]
+      },
+      "ammunition": {
+        "导弹X": [4, 500],
+        "炸弹Y": [2, 300]
+      }
+    },
+    "3": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [1, 1000],
+        "C型": [2, 3000]
+      },
+      "ammunition": {
+        "导弹X": [3, 500],
+        "炸弹Z": [4, 400]
+      }
+    },
+    "4": {
+      "replaceable": true,
+      "aircraft": {
+        "B型": [2, 2000],
+        "C型": [1, 3000]
+      },
+      "ammunition": {
+        "导弹X": [3, 500],
+        "炸弹Z": [2, 400]
+      }
+    },
+    "5": {
+      "replaceable": true,
+      "aircraft": {
+        "A型": [1, 1000],
+        "C型": [2, 3000]
+      },
+      "ammunition": {
+        "炸弹Y": [4, 300],
+        "炸弹Z": [3, 400]
+      }
+    },
+    "6": {
+      "replaceable": false,
+      "aircraft": {
+        "B型": [2, 2000],
+        "C型": [1, 3000]
+      },
+      "ammunition": {
+        "炸弹Y": [2, 300],
+        "炸弹Z": [3, 400]
+      }
+    },
+    "a": {
+      "replaceable": false,
+      "aircraft": {
+        "A型-G": [2, 900],
+        "B型": [2, 2000]
+      },
+      "ammunition": {
+        "导弹X": [3, 500],
+        "炸弹Y": [3, 300]
+      }
+    },
+    "b": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [2, 1000],
+        "B型": [2, 2000]
+      },
+      "ammunition": {
+        "导弹X": [3, 500],
+        "炸弹Y": [3, 300]
+      }
+    },
+    "c": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [2, 1000],
+        "B型": [2, 2000]
+      },
+      "ammunition": {
+        "导弹X": [3, 500],
+        "炸弹Y": [3, 300]
+      }
+    },
+    "d": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [2, 1000],
+        "C型": [1, 3000]
+      },
+      "ammunition": {
+        "导弹X": [2, 500],
+        "炸弹Z": [3, 400]
+      }
+    },
+    "e": {
+      "replaceable": false,
+      "aircraft": {
+        "B型": [1, 2000],
+        "C型": [2, 3000]
+      },
+      "ammunition": {
+        "导弹X": [4, 500],
+        "炸弹Y": [1, 300]
+      }
+    },
+    "f": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [2, 1000],
+        "B型": [1, 2000]
+      },
+      "ammunition": {
+        "炸弹Y": [2, 300],
+        "炸弹Z": [2, 400]
+      }
+    }
+  },
+  "actions": {
+    "1": ["1", "2", "3"],
+    "2": ["4", "5", "6"]
+  },
+  "replacement_options": {
+    "2": ["a", "b", "c"],
+    "4": ["d", "e"],
+    "5": ["f"]
+  },
+  "constraints": {
+    "aircraft": {
+      "A型": 8,
+      "B型": 6,
+      "C型": 5
+    },
+    "ammunition": {
+      "导弹X": 15,
+      "炸弹Y": 10,
+      "炸弹Z": 12
+    }
+  }
+}
