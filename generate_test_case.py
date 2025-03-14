@@ -202,7 +202,7 @@ def main():
     # 默认每个行动有1个可变策略和2个不可变策略
     strategies_per_action = {}
     for i in range(1, args.num_actions + 1):
-        strategies_per_action[str(i)] = (2, 3)  # (可变策略数, 不可变策略数)
+        strategies_per_action[str(i)] = (5, 10)  # (可变策略数, 不可变策略数)
     
     # 默认每个可变策略有2个替换选项
     replacements_per_strategy = {}

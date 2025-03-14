@@ -4,8 +4,14 @@ import os
 import glob
 import random
 import copy
+import time
+
 import matplotlib.pyplot as plt  # 添加matplotlib库用于绘图
 from typing import Dict, List, Tuple, Any, Set
+from pylab import mpl
+
+# 设置显示中文字体
+mpl.rcParams["font.sans-serif"] = ["SimHei"]
 
 class Strategy:
     def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0):
@@ -265,18 +271,18 @@ class ActionList:
             
             # 判断是否可以提前终止迭代
             # 使用更合理的终止条件：连续多代最优解没有改进，或者找到了显著优于初始方案的解
-            # TODO
+            # TODO ↓
             if generation > 150:  # 至少运行100代
                 # 如果找到了比初始方案至少优20%的解，可以提前终止
                 # if best_price < initial_price * 0.8:
                 #     break
                 # 或者如果最近30代没有改进，也可以提前终止
-                if generation > 30 and convergence_data and all(
-                    abs(data[1] - best_price) < 0.001 * best_price if data[1] is not None else False 
+                if generation > 50 and convergence_data and all(
+                    abs(data[1] - best_price) < 0.001 * best_price if data[1] is not None else False
                     for data in convergence_data[-30:]
                 ):
                     break
-            
+            # TODO ↑
             # 选择精英个体
             elites = [fs[0] for fs in fitness_scores[:elite_size]]
             
@@ -451,8 +457,12 @@ class ActionList:
         返回:
         selected_individual: 被选中的个体
         """
-        # 计算适应度总和（只考虑正值，负值设为0）
-        total_fitness = sum(max(0.01, fs[1] + 1000000) for fs in fitness_scores)
+        # 找出最小适应度值
+        min_fitness = min(fs[1] for fs in fitness_scores)
+        
+        # 计算适应度总和（将所有适应度值平移，使最小值变为正数）
+        offset = abs(min_fitness) + 1  # 加1确保所有值都是正的
+        total_fitness = sum(fs[1] + offset for fs in fitness_scores)
         
         # 生成随机值
         r = random.uniform(0, total_fitness)
@@ -460,7 +470,7 @@ class ActionList:
         # 轮盘赌选择
         current_sum = 0
         for individual, fitness, _, _ in fitness_scores:
-            current_sum += max(0.01, fitness + 1000000)
+            current_sum += (fitness + offset)
             if current_sum >= r:
                 return individual
         
@@ -483,6 +493,14 @@ class ActionList:
         
         crossover_point = random.randint(1, len(parent1) - 1)
         child = parent1[:crossover_point] + parent2[crossover_point:]
+        
+        # 修复子代，确保每个位置的值都在对应策略的有效替换选项范围内
+        for i in range(len(child)):
+            strategy_id = list(self.replacement_options.keys())[i]
+            max_option = len(self.replacement_options.get(strategy_id, []))
+            if child[i] > max_option:
+                child[i] = random.randint(0, max_option)  # 如果超出范围，随机选择一个有效值
+        
         return child
     
     def _mutation(self, individual, mutation_rate):
@@ -697,4 +715,7 @@ def main():
 
 # 运行测试
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    end_time = time.time()
+    print(f"程序执行时间: {end_time - start_time} s")
