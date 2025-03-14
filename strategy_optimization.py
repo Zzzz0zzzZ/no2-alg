@@ -105,16 +105,53 @@ class ActionList:
         best_combination: 最优替换方案，字典，键为策略ID，值为替换后的策略
         total_price: 最优方案的总价格
         """
+        # 检查初始方案是否满足资源约束
+        initial_aircraft_usage = {}
+        initial_ammunition_usage = {}
+        initial_price = 0
+        
+        for action in self.actions:
+            for strategy in action.strategies:
+                aircraft_usage, ammunition_usage = strategy.get_resource_usage()
+                initial_price += strategy.price
+                
+                for aircraft_type, count in aircraft_usage.items():
+                    initial_aircraft_usage[aircraft_type] = initial_aircraft_usage.get(aircraft_type, 0) + count
+                
+                for ammo_type, count in ammunition_usage.items():
+                    initial_ammunition_usage[ammo_type] = initial_ammunition_usage.get(ammo_type, 0) + count
+        
+        # 检查初始方案是否超出资源约束
+        resource_exceeded = False
+        exceeded_resources = []
+        
+        for aircraft_type, count in initial_aircraft_usage.items():
+            if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
+                resource_exceeded = True
+                exceeded_resources.append(f"载机 {aircraft_type}: {count}/{aircraft_constraints[aircraft_type]}")
+        
+        for ammo_type, count in initial_ammunition_usage.items():
+            if ammo_type in ammunition_constraints and count > ammunition_constraints[ammo_type]:
+                resource_exceeded = True
+                exceeded_resources.append(f"弹药 {ammo_type}: {count}/{ammunition_constraints[ammo_type]}")
+        
+        if resource_exceeded:
+            print("警告: 初始方案已超出资源约束限制:")
+            for resource in exceeded_resources:
+                print(f"  - {resource}")
+            print("尝试寻找满足约束的替换方案...")
+        
         # 获取所有可替换策略
         replaceable_strategies = []
         for action in self.actions:
             for strategy in action.strategies:
                 if strategy.replaceable and strategy.id in self.replacement_options:
                     replaceable_strategies.append(strategy.id)
-
+        
         # 使用回溯法找出最优替换方案
         best_combination = {}
         best_price = float('inf')
+        solution_found = False
 
         def backtrack(index, current_combination, current_aircraft_usage, current_ammunition_usage):
             nonlocal best_combination, best_price
@@ -215,7 +252,29 @@ class ActionList:
 
         # 开始回溯
         backtrack(0, {}, {}, {})
-
+        
+        # 检查是否找到了满足约束的方案
+        if best_price == float('inf'):
+            print("无法找到满足所有资源约束的方案。")
+            return {}, 0
+        else:
+            if resource_exceeded:
+                # 检查是否真的找到了新的替换方案
+                if not best_combination:
+                    print("无法找到满足资源约束的替换方案。")
+                    return {}, 0
+                else:
+                    print(f"找到满足资源约束的替换方案，总价格: {best_price}")
+                    if best_price < initial_price:
+                        print(f"新方案比原方案节省: {initial_price - best_price}")
+                    else:
+                        print(f"新方案比原方案增加: {best_price - initial_price}")
+            else:
+                if best_price < initial_price:
+                    print(f"找到更优方案，总价格: {best_price}，节省: {initial_price - best_price}")
+                else:
+                    print("未找到更优方案，保持原方案不变")
+        
         return best_combination, best_price
 
     def __str__(self):
@@ -253,16 +312,16 @@ def main():
 
     # 替换选项
     strategy_a = Strategy("a", False,
-                          aircraft={"A型": (2, 1000), "B型": (2, 2000)},
+                          aircraft={"A型-G": (2, 900), "B型": (2, 2000)},
                           ammunition={"导弹X": (3, 500), "炸弹Y": (3, 300)})
 
     strategy_b = Strategy("b", False,
-                          aircraft={"A型": (1, 1000), "C型": (1, 3000)},
-                          ammunition={"导弹X": (5, 500), "炸弹Y": (1, 300)})
+                          aircraft={"A型": (2, 1000), "B型": (2, 2000)},
+                          ammunition={"导弹X": (3, 500), "炸弹Y": (3, 300)})
 
     strategy_c = Strategy("c", False,
-                          aircraft={"B型": (3, 2000)},
-                          ammunition={"导弹X": (2, 500), "炸弹Z": (2, 400)})
+                          aircraft={"A型": (2, 1000), "B型": (2, 2000)},
+                          ammunition={"导弹X": (3, 500), "炸弹Y": (3, 300)})
 
     strategy_d = Strategy("d", False,
                           aircraft={"A型": (2, 1000), "C型": (1, 3000)},
