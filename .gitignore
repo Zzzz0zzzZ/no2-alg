@@ -1,1 +1,5 @@
 .idea
+api.log
+core/output
+core/testcases
+core/testcases[DRAFT]
