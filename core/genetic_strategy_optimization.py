@@ -13,6 +13,7 @@ from pylab import mpl
 # 设置显示中文字体
 mpl.rcParams["font.sans-serif"] = ["SimHei"]
 
+
 class Strategy:
     def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0):
         """
@@ -106,7 +107,8 @@ class ActionList:
         """
         self.replacement_options[strategy_id] = replacement_strategies
 
-    def optimize(self, aircraft_constraints, ammunition_constraints, plot_convergence=False):
+    def optimize(self, aircraft_constraints, ammunition_constraints, plot_convergence=False, solution_count=1,
+                 time_limit=None):
         """
         使用遗传算法优化作战行动清单，找出在资源约束下总价格最低的替换方案
         
@@ -114,97 +116,184 @@ class ActionList:
         aircraft_constraints: 字典，键为载机种类，值为最大可用数量
         ammunition_constraints: 字典，键为弹药种类，值为最大可用数量
         plot_convergence: 是否绘制收敛曲线
+        solution_count: 返回的最优解数量，默认为1
+        time_limit: 算法运行时间限制（秒），默认为None表示无限制
         
         返回:
-        best_combination: 最优替换方案，字典，键为策略ID，值为替换后的策略
-        total_price: 最优方案的总价格
+        best_combinations: 最优替换方案列表，每个元素是一个字典，键为策略ID，值为替换后的策略
+        total_prices: 对应的总价格列表
         """
         # 检查初始方案是否满足资源约束
         initial_aircraft_usage = {}
         initial_ammunition_usage = {}
         initial_price = 0
-        
+
         for action in self.actions:
             for strategy in action.strategies:
                 aircraft_usage, ammunition_usage = strategy.get_resource_usage()
                 initial_price += strategy.price
-                
+
                 for aircraft_type, count in aircraft_usage.items():
                     initial_aircraft_usage[aircraft_type] = initial_aircraft_usage.get(aircraft_type, 0) + count
-                
+
                 for ammo_type, count in ammunition_usage.items():
                     initial_ammunition_usage[ammo_type] = initial_ammunition_usage.get(ammo_type, 0) + count
-        
+
         # 检查初始方案是否超出资源约束
         resource_exceeded = False
         exceeded_resources = []
-        
+
         for aircraft_type, count in initial_aircraft_usage.items():
             if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
                 resource_exceeded = True
                 exceeded_resources.append(f"载机 {aircraft_type}: {count}/{aircraft_constraints[aircraft_type]}")
-        
+
         for ammo_type, count in initial_ammunition_usage.items():
             if ammo_type in ammunition_constraints and count > ammunition_constraints[ammo_type]:
                 resource_exceeded = True
                 exceeded_resources.append(f"弹药 {ammo_type}: {count}/{ammunition_constraints[ammo_type]}")
-        
+
         if resource_exceeded:
             print("警告: 初始方案已超出资源约束限制:")
             for resource in exceeded_resources:
                 print(f"  - {resource}")
             print("尝试寻找满足约束的替换方案...")
-        
+
         # 获取所有可替换策略
         replaceable_strategies = []
         for action in self.actions:
             for strategy in action.strategies:
                 if strategy.replaceable and strategy.id in self.replacement_options:
                     replaceable_strategies.append(strategy.id)
-        
+
         # 如果没有可替换策略，直接返回初始方案
         if not replaceable_strategies:
             print("没有可替换的策略，保持原方案不变")
             return {}, initial_price
-        
+
         # 使用遗传算法找出最优替换方案
-        best_combination, best_price, convergence_data = self._genetic_algorithm_optimize(
-            replaceable_strategies, 
-            aircraft_constraints, 
+        best_combinations, total_prices, convergence_data = self._genetic_algorithm_optimize(
+            replaceable_strategies,
+            aircraft_constraints,
             ammunition_constraints,
             initial_price,
-            plot_convergence
+            plot_convergence,
+            solution_count,
+            time_limit
         )
-        
+
         # 如果需要绘制收敛曲线
         if plot_convergence and convergence_data:
             self._plot_convergence_curve(convergence_data)
-        
+
         # 检查是否找到了满足约束的方案
-        if best_price == float('inf'):
+        if not best_combinations or total_prices[0] == float('inf'):
             print("无法找到满足所有资源约束的方案。")
-            return {}, 0
+            return [], []
         else:
             if resource_exceeded:
                 # 检查是否真的找到了新的替换方案
-                if not best_combination:
+                if not best_combinations[0]:
                     print("无法找到满足资源约束的替换方案。")
-                    return {}, 0
+                    return [], []
                 else:
-                    print(f"找到满足资源约束的替换方案，总价格: {best_price}")
-                    if best_price < initial_price:
-                        print(f"新方案比原方案节省: {initial_price - best_price}")
-                    else:
-                        print(f"新方案比原方案增加: {best_price - initial_price}")
+                    print(f"找到{len(best_combinations)}个满足资源约束的替换方案:")
+                    for i, (combination, price) in enumerate(zip(best_combinations, total_prices), 1):
+                        print(f"\n方案 {i}:")
+                        print(f"总价格: {price}")
+                        if price < initial_price:
+                            print(f"比原方案节省: {initial_price - price}")
+                        else:
+                            print(f"比原方案增加: {price - initial_price}")
+
+                        # 打印替换方案详情
+                        print("\n替换方案详情:")
+                        for action in self.actions:
+                            print(f"行动 {action.id}:")
+                            for strategy in action.strategies:
+                                if strategy.replaceable and strategy.id in combination:
+                                    replacement = combination[strategy.id]
+                                    print(f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price})")
+                                else:
+                                    print(f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}")
+
+                        # 打印资源使用情况
+                        print("\n资源使用情况:")
+                        total_aircraft_usage = {}
+                        total_ammunition_usage = {}
+
+                        for action in self.actions:
+                            for strategy in action.strategies:
+                                if strategy.replaceable and strategy.id in combination:
+                                    strategy = combination[strategy.id]
+
+                                aircraft_usage, ammunition_usage = strategy.get_resource_usage()
+
+                                for aircraft_type, count in aircraft_usage.items():
+                                    total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type,
+                                                                                                   0) + count
+
+                                for ammo_type, count in ammunition_usage.items():
+                                    total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
+
+                        print("载机使用:")
+                        for aircraft_type, count in total_aircraft_usage.items():
+                            print(f"  - {aircraft_type}: {count}/{aircraft_constraints.get(aircraft_type, '无限制')}")
+
+                        print("弹药使用:")
+                        for ammo_type, count in total_ammunition_usage.items():
+                            print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
             else:
-                if best_price < initial_price:
-                    print(f"找到更优方案，总价格: {best_price}，节省: {initial_price - best_price}")
+                if total_prices[0] < initial_price:
+                    print(f"找到{len(best_combinations)}个更优方案:")
+                    for i, (combination, price) in enumerate(zip(best_combinations, total_prices), 1):
+                        print(f"\n方案 {i}:")
+                        print(f"总价格: {price}，节省: {initial_price - price}")
+
+                        # 打印替换方案详情
+                        print("\n替换方案详情:")
+                        for action in self.actions:
+                            print(f"行动 {action.id}:")
+                            for strategy in action.strategies:
+                                if strategy.replaceable and strategy.id in combination:
+                                    replacement = combination[strategy.id]
+                                    print(f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price})")
+                                else:
+                                    print(f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}")
+
+                        # 打印资源使用情况
+                        print("\n资源使用情况:")
+                        total_aircraft_usage = {}
+                        total_ammunition_usage = {}
+
+                        for action in self.actions:
+                            for strategy in action.strategies:
+                                if strategy.replaceable and strategy.id in combination:
+                                    strategy = combination[strategy.id]
+
+                                aircraft_usage, ammunition_usage = strategy.get_resource_usage()
+
+                                for aircraft_type, count in aircraft_usage.items():
+                                    total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type,
+                                                                                                   0) + count
+
+                                for ammo_type, count in ammunition_usage.items():
+                                    total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
+
+                        print("载机使用:")
+                        for aircraft_type, count in total_aircraft_usage.items():
+                            print(f"  - {aircraft_type}: {count}/{aircraft_constraints.get(aircraft_type, '无限制')}")
+
+                        print("弹药使用:")
+                        for ammo_type, count in total_ammunition_usage.items():
+                            print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
                 else:
                     print("未找到更优方案，保持原方案不变")
-        
-        return best_combination, best_price
-    
-    def _genetic_algorithm_optimize(self, replaceable_strategies, aircraft_constraints, ammunition_constraints, initial_price, plot_convergence=False):
+
+        return best_combinations, total_prices
+
+    def _genetic_algorithm_optimize(self, replaceable_strategies, aircraft_constraints, ammunition_constraints,
+                                    initial_price, plot_convergence=False, solution_count=1, time_limit=None):
         """
         使用遗传算法寻找最优替换方案
         
@@ -214,81 +303,120 @@ class ActionList:
         ammunition_constraints: 弹药约束
         initial_price: 初始方案总价格
         plot_convergence: 是否记录收敛数据
+        solution_count: 返回的最优解数量
+        time_limit: 算法运行时间限制（秒）
         
         返回:
-        best_combination: 最优替换方案
-        best_price: 最优方案总价格
+        best_combinations: 最优替换方案列表
+        total_prices: 最优方案总价格列表
         convergence_data: 收敛数据，如果plot_convergence为True
         """
         # 遗传算法参数
         population_size = 100  # 种群大小
-        generations = 200     # 迭代代数
-        mutation_rate = 0.1   # 变异率
-        elite_size = 10        # 精英数量
-        
+        generations = 200  # 迭代代数
+        mutation_rate = 0.1  # 变异率
+        elite_size = 10  # 精英数量
+
         # 初始化种群
         population = self._initialize_population(replaceable_strategies, population_size)
-        
-        # 记录最优解
-        best_individual = None
-        best_fitness = float('-inf')
-        best_price = float('inf')
-        best_combination = {}
-        
+
+        # 记录最优解集合
+        best_solutions = []
+        best_prices = []
+
         # 用于记录收敛曲线数据
         convergence_data = [] if plot_convergence else None
-        
+
+        # 记录开始时间
+        start_time = time.time()
+
         # 迭代进化
         for generation in range(generations):
             # 评估种群适应度
             fitness_scores = []
             for individual in population:
-                fitness, price, valid = self._evaluate_fitness(individual, replaceable_strategies, aircraft_constraints, ammunition_constraints)
+                fitness, price, valid = self._evaluate_fitness(individual, replaceable_strategies, aircraft_constraints,
+                                                               ammunition_constraints)
                 fitness_scores.append((individual, fitness, price, valid))
-            
+
             # 排序，适应度高的在前面
             fitness_scores.sort(key=lambda x: x[1], reverse=True)
-            
-            # 更新最优解
+
+            # 更新最优解集合
             current_best_valid_fitness = float('-inf')
             current_best_valid_price = float('inf')
-            
-            for individual, fitness, price, valid in fitness_scores:
-                if valid and price < best_price:
-                    best_individual = individual
-                    best_fitness = fitness
-                    best_price = price
-                    best_combination = self._decode_individual(individual, replaceable_strategies)
-                
-                if valid and fitness > current_best_valid_fitness:
-                    current_best_valid_fitness = fitness
-                    current_best_valid_price = price
-            
+
+            # 获取所有有效解
+            valid_solutions = [(individual, fitness, price) for individual, fitness, price, valid in fitness_scores if
+                               valid]
+
+            # 按价格排序
+            valid_solutions.sort(key=lambda x: x[2])
+
+            # 更新最优解集合
+            new_best_solutions = []
+            new_best_prices = []
+            seen_combinations = set()  # 用于记录已经见过的方案
+
+            for individual, fitness, price in valid_solutions:
+                # 解码当前个体
+                combination = self._decode_individual(individual, replaceable_strategies)
+
+                # 将combination转换为可哈希的形式以便去重
+                combination_tuple = tuple(sorted((k, v.id) for k, v in combination.items()))
+
+                # 如果这个方案还没见过，且（最优解集合未满或者比当前最差的解更好）
+                if combination_tuple not in seen_combinations and \
+                        (len(new_best_solutions) < solution_count or price < max(new_best_prices)):
+
+                    # 如果最优解集合已满，移除价格最高的解
+                    if len(new_best_solutions) >= solution_count:
+                        max_price_index = new_best_prices.index(max(new_best_prices))
+                        old_combination = new_best_solutions[max_price_index]
+                        old_combination_tuple = tuple(sorted((k, v.id) for k, v in old_combination.items()))
+                        seen_combinations.remove(old_combination_tuple)
+                        new_best_solutions.pop(max_price_index)
+                        new_best_prices.pop(max_price_index)
+
+                    new_best_solutions.append(combination)
+                    new_best_prices.append(price)
+                    seen_combinations.add(combination_tuple)
+
+                    if fitness > current_best_valid_fitness:
+                        current_best_valid_fitness = fitness
+                        current_best_valid_price = price
+
+            # 更新全局最优解集合
+            if new_best_solutions:
+                best_solutions = new_best_solutions
+                best_prices = new_best_prices
+
             # 记录当前代的最佳适应度和价格
             if plot_convergence:
                 # 如果当前代有有效解，记录最佳有效解的价格，否则记录无穷大
-                convergence_data.append((generation, current_best_valid_price if current_best_valid_price != float('inf') else None))
-            
+                convergence_data.append(
+                    (generation, current_best_valid_price if current_best_valid_price != float('inf') else None))
+
+            # 检查是否达到时间限制
+            if time_limit is not None and time.time() - start_time >= time_limit:
+                print(f"达到时间限制 {time_limit} 秒，提前结束迭代")
+                break
+
             # 判断是否可以提前终止迭代
-            # 使用更合理的终止条件：连续多代最优解没有改进，或者找到了显著优于初始方案的解
-            # TODO ↓
-            if generation > 150:  # 至少运行100代
-                # 如果找到了比初始方案至少优20%的解，可以提前终止
-                # if best_price < initial_price * 0.8:
-                #     break
-                # 或者如果最近30代没有改进，也可以提前终止
+            if generation > 150:  # 至少运行150代
+                # 检查最近30代是否有显著改进
                 if generation > 50 and convergence_data and all(
-                    abs(data[1] - best_price) < 0.001 * best_price if data[1] is not None else False
-                    for data in convergence_data[-30:]
+                        abs(data[1] - best_prices[0]) < 0.001 * best_prices[0] if data[1] is not None else False
+                        for data in convergence_data[-30:]
                 ):
+                    print("最近30代无显著改进，提前结束迭代")
                     break
-            # TODO ↑
             # 选择精英个体
             elites = [fs[0] for fs in fitness_scores[:elite_size]]
-            
+
             # 选择父代进行交叉和变异
             new_population = elites.copy()
-            
+
             # 使用轮盘赌选择和交叉生成新个体
             while len(new_population) < population_size:
                 parent1 = self._selection(fitness_scores)
@@ -296,15 +424,15 @@ class ActionList:
                 child = self._crossover(parent1, parent2)
                 child = self._mutation(child, mutation_rate)
                 new_population.append(child)
-            
+
             population = new_population
-        
-        # 如果没有找到满足约束的解，返回空方案
-        if best_price == float('inf'):
-            return {}, float('inf'), convergence_data
-        
-        return best_combination, best_price, convergence_data
-    
+
+        # 如果没有找到满足约束的解，返回空方案列表
+        if not best_solutions:
+            return [], [float('inf')], convergence_data
+
+        return best_solutions, best_prices, convergence_data
+
     def _plot_convergence_curve(self, convergence_data):
         """
         绘制遗传算法的收敛曲线
@@ -322,31 +450,31 @@ class ActionList:
             if price is not None:
                 valid_gens.append(gen)
                 valid_prices.append(price)
-        
+
         plt.figure(figsize=(10, 6))
-        
+
         # 如果有有效解，绘制有效解的收敛曲线
         if valid_prices:
             plt.plot(valid_gens, valid_prices, 'b-', label='有效解价格')
             plt.scatter(valid_gens, valid_prices, color='blue', s=20)
-        
+
         # 标记无效解的代数
         invalid_gens = [gen for gen, price in zip(generations, prices) if price is None]
         if invalid_gens:
-            plt.scatter(invalid_gens, [max(valid_prices) * 1.1 if valid_prices else 1000] * len(invalid_gens), 
-                       color='red', marker='x', label='无有效解的代数')
-        
+            plt.scatter(invalid_gens, [max(valid_prices) * 1.1 if valid_prices else 1000] * len(invalid_gens),
+                        color='red', marker='x', label='无有效解的代数')
+
         plt.title('遗传算法收敛曲线')
         plt.xlabel('代数')
         plt.ylabel('最佳有效解价格')
         plt.grid(True)
         plt.legend()
-        
+
         # 保存图像
         output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        
+
         plt.savefig(os.path.join(output_dir, 'convergence_curve.png'))
         print(f"收敛曲线已保存至: {os.path.join(output_dir, 'convergence_curve.png')}")
         plt.close()
@@ -363,11 +491,11 @@ class ActionList:
         population: 初始种群，每个个体是一个染色体（替换方案的编码）
         """
         population = []
-        
+
         # 创建一个不替换任何策略的个体
         no_replacement = [0] * len(replaceable_strategies)
         population.append(no_replacement)
-        
+
         # 随机生成其他个体
         for _ in range(population_size - 1):
             individual = []
@@ -377,9 +505,9 @@ class ActionList:
                 max_option = len(self.replacement_options.get(strategy_id, []))
                 individual.append(random.randint(0, max_option))
             population.append(individual)
-        
+
         return population
-    
+
     def _evaluate_fitness(self, individual, replaceable_strategies, aircraft_constraints, ammunition_constraints):
         """
         评估个体的适应度
@@ -397,12 +525,12 @@ class ActionList:
         """
         # 解码个体，获取替换方案
         combination = self._decode_individual(individual, replaceable_strategies)
-        
+
         # 计算资源使用情况和总价格
         aircraft_usage = {}
         ammunition_usage = {}
         total_price = 0
-        
+
         for action in self.actions:
             for strategy in action.strategies:
                 # 如果策略被替换，使用替换后的策略
@@ -410,32 +538,32 @@ class ActionList:
                     strategy_to_use = combination[strategy.id]
                 else:
                     strategy_to_use = strategy
-                
+
                 # 累加价格
                 total_price += strategy_to_use.price
-                
+
                 # 累加资源使用
                 aircraft_usage_part, ammunition_usage_part = strategy_to_use.get_resource_usage()
                 for aircraft_type, count in aircraft_usage_part.items():
                     aircraft_usage[aircraft_type] = aircraft_usage.get(aircraft_type, 0) + count
-                
+
                 for ammo_type, count in ammunition_usage_part.items():
                     ammunition_usage[ammo_type] = ammunition_usage.get(ammo_type, 0) + count
-        
+
         # 检查是否满足约束
         valid = True
         constraint_violation = 0
-        
+
         for aircraft_type, count in aircraft_usage.items():
             if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
                 valid = False
                 constraint_violation += count - aircraft_constraints[aircraft_type]
-        
+
         for ammo_type, count in ammunition_usage.items():
             if ammo_type in ammunition_constraints and count > ammunition_constraints[ammo_type]:
                 valid = False
                 constraint_violation += count - ammunition_constraints[ammo_type]
-        
+
         # 计算适应度
         # 如果方案有效，适应度为价格的负值（价格越低适应度越高）
         # 如果方案无效，适应度为一个很大的负值减去约束违反程度
@@ -443,9 +571,9 @@ class ActionList:
             fitness = -total_price
         else:
             fitness = -1000000 - constraint_violation * 10000
-        
+
         return fitness, total_price, valid
-    
+
     def _selection(self, fitness_scores):
         """
         使用轮盘赌选择一个个体
@@ -458,24 +586,24 @@ class ActionList:
         """
         # 找出最小适应度值
         min_fitness = min(fs[1] for fs in fitness_scores)
-        
+
         # 计算适应度总和（将所有适应度值平移，使最小值变为正数）
         offset = abs(min_fitness) + 1  # 加1确保所有值都是正的
         total_fitness = sum(fs[1] + offset for fs in fitness_scores)
-        
+
         # 生成随机值
         r = random.uniform(0, total_fitness)
-        
+
         # 轮盘赌选择
         current_sum = 0
         for individual, fitness, _, _ in fitness_scores:
             current_sum += (fitness + offset)
             if current_sum >= r:
                 return individual
-        
+
         # 如果没有选中任何个体（理论上不应该发生），返回第一个
         return fitness_scores[0][0]
-    
+
     def _crossover(self, parent1, parent2):
         """
         对两个父代个体进行交叉操作
@@ -489,19 +617,19 @@ class ActionList:
         # 单点交叉
         if len(parent1) <= 1:
             return parent1.copy()
-        
+
         crossover_point = random.randint(1, len(parent1) - 1)
         child = parent1[:crossover_point] + parent2[crossover_point:]
-        
+
         # 修复子代，确保每个位置的值都在对应策略的有效替换选项范围内
         for i in range(len(child)):
             strategy_id = list(self.replacement_options.keys())[i]
             max_option = len(self.replacement_options.get(strategy_id, []))
             if child[i] > max_option:
                 child[i] = random.randint(0, max_option)  # 如果超出范围，随机选择一个有效值
-        
+
         return child
-    
+
     def _mutation(self, individual, mutation_rate):
         """
         对个体进行变异操作
@@ -514,7 +642,7 @@ class ActionList:
         mutated_individual: 变异后的个体
         """
         mutated = individual.copy()
-        
+
         for i in range(len(mutated)):
             # 以mutation_rate的概率进行变异
             if random.random() < mutation_rate:
@@ -526,9 +654,9 @@ class ActionList:
                 while new_value == current_value and max_option > 0:
                     new_value = random.randint(0, max_option)
                 mutated[i] = new_value
-        
+
         return mutated
-    
+
     def _decode_individual(self, individual, replaceable_strategies):
         """
         将个体（染色体）解码为替换方案
@@ -541,16 +669,16 @@ class ActionList:
         combination: 替换方案，字典，键为策略ID，值为替换后的策略
         """
         combination = {}
-        
+
         for i, strategy_id in enumerate(replaceable_strategies):
             option_index = individual[i]
             # 如果option_index为0，表示不替换
             if option_index > 0 and option_index <= len(self.replacement_options.get(strategy_id, [])):
                 replacement = self.replacement_options[strategy_id][option_index - 1]
                 combination[strategy_id] = replacement
-        
+
         return combination
-    
+
     def __str__(self):
         return f"ActionList (行动数: {len(self.actions)})"
 
@@ -571,7 +699,7 @@ def load_test_case(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         # 创建策略对象
         strategies = {}
         for strategy_id, strategy_data in data['strategies'].items():
@@ -583,7 +711,7 @@ def load_test_case(file_path):
                 aircraft=aircraft,
                 ammunition=ammunition
             )
-        
+
         # 创建行动对象
         actions = {}
         for action_id, strategy_ids in data['actions'].items():
@@ -594,100 +722,74 @@ def load_test_case(file_path):
                 else:
                     print(f"警告: 策略 {strategy_id} 未在策略列表中定义")
             actions[action_id] = action
-        
+
         # 创建作战行动清单
         action_list = ActionList()
         for action in actions.values():
             action_list.add_action(action)
-        
+
         # 添加替换选项
         for strategy_id, replacement_ids in data.get('replacement_options', {}).items():
             replacement_strategies = [strategies[rid] for rid in replacement_ids if rid in strategies]
             if replacement_strategies:
                 action_list.add_replacement_option(strategy_id, replacement_strategies)
-        
+
         # 获取约束条件
         constraints = data.get('constraints', {})
         aircraft_constraints = constraints.get('aircraft', {})
         ammunition_constraints = constraints.get('ammunition', {})
-        
+
         return action_list, aircraft_constraints, ammunition_constraints
-    
+
     except Exception as e:
         print(f"加载测试用例 {file_path} 时出错: {e}")
         return None, None, None
+
+
+def run_optimize(action_list, aircraft_constraints, ammunition_constraints, plot_convergence, solution_count=1,
+                 time_limit=None):
+    """
+    [TOP] 优化算法顶层调用，传入实例化的action_list，及约束条件，输出优化结果
+    :param action_list:
+    :param aircraft_constraints:
+    :param ammunition_constraints:
+    :param plot_convergence:
+    :param solution_count:
+    :param time_limit:
+    :return:
+    """
+    # 优化，并传入plot_convergence参数
+    best_combinations, total_prices = action_list.optimize(
+        aircraft_constraints,
+        ammunition_constraints,
+        plot_convergence=plot_convergence,
+        solution_count=solution_count,
+        time_limit=time_limit
+    )
+    print("-" * 50)
+    return best_combinations, total_prices
+
 
 # 运行单个测试用例
 def run_test_case(file_path, plot_convergence=True):
     """
     运行单个测试用例
-    
+
     参数:
     file_path: 测试用例文件路径
     plot_convergence: 是否绘制收敛曲线
     """
     print(f"\n运行测试用例: {os.path.basename(file_path)}")
     print("-" * 50)
-    
+
     action_list, aircraft_constraints, ammunition_constraints = load_test_case(file_path)
     if not action_list or not aircraft_constraints or not ammunition_constraints:
         print(f"无法加载测试用例: {file_path}")
         return
-    
-    # 优化，并传入plot_convergence参数
-    best_combination, total_price = action_list.optimize(
-        aircraft_constraints, 
-        ammunition_constraints,
-        plot_convergence=plot_convergence
-    )
-    
-    # 打印原始策略
-    print("\n原始策略:")
-    for action in action_list.actions:
-        print(f"行动 {action.id}:")
-        for strategy in action.strategies:
-            print(f"  - {strategy}")
-    
-    # 打印最优替换方案
-    print("\n最优替换方案:")
-    print(f"总价格: {total_price}")
-    
-    for action in action_list.actions:
-        print(f"行动 {action.id}:")
-        for strategy in action.strategies:
-            if strategy.replaceable and strategy.id in best_combination:
-                replacement = best_combination[strategy.id]
-                print(f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price})")
-            else:
-                print(f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}")
-    
-    # 打印资源使用情况
-    print("\n资源使用情况:")
-    total_aircraft_usage = {}
-    total_ammunition_usage = {}
-    
-    for action in action_list.actions:
-        for strategy in action.strategies:
-            if strategy.replaceable and strategy.id in best_combination:
-                strategy = best_combination[strategy.id]
-            
-            aircraft_usage, ammunition_usage = strategy.get_resource_usage()
-            
-            for aircraft_type, count in aircraft_usage.items():
-                total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type, 0) + count
-            
-            for ammo_type, count in ammunition_usage.items():
-                total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
-    
-    print("载机使用:")
-    for aircraft_type, count in total_aircraft_usage.items():
-        print(f"  - {aircraft_type}: {count}/{aircraft_constraints.get(aircraft_type, '无限制')}")
-    
-    print("弹药使用:")
-    for ammo_type, count in total_ammunition_usage.items():
-        print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
-    
-    print("-" * 50)
+
+    # 调用优化算法
+    run_optimize(action_list, aircraft_constraints, ammunition_constraints, plot_convergence)
+
 
 # 主函数
 def main():
@@ -696,21 +798,22 @@ def main():
     """
     test_case_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'testcases')
     test_case_files = glob.glob(os.path.join(test_case_dir, '*.json'))
-    
+
     if not test_case_files:
         print(f"未找到测试用例文件，请确保 {test_case_dir} 目录下有 .json 文件")
         return
-    
+
     print(f"找到 {len(test_case_files)} 个测试用例文件")
-    
+
     # 添加命令行参数解析
     import argparse
     parser = argparse.ArgumentParser(description='基于遗传算法的策略优化')
     parser.add_argument('--no-plot', action='store_true', help='不绘制收敛曲线')
     args = parser.parse_args()
-    
+
     for file_path in test_case_files:
         run_test_case(file_path, plot_convergence=not args.no_plot)
+
 
 # 运行测试
 if __name__ == "__main__":
