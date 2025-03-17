@@ -13,7 +13,10 @@ def generate_test_case(num_actions: int,
                      ammunition_count_range: Tuple[int, int],
                      aircraft_price_range: Tuple[int, int],
                      ammunition_price_range: Tuple[int, int],
-                     output_file: str):
+                     output_file: str,
+                     time_limit: int = 0,
+                     solution_count: int = 1
+                    ):
     """
     生成测试样例并保存为JSON文件
     
@@ -132,7 +135,10 @@ def generate_test_case(num_actions: int,
     
     for ammo_type, usage in ammunition_usage.items():
         test_case["constraints"]["ammunition"][ammo_type] = int(usage * random.uniform(1.2, 1.5))
-    
+
+    test_case["time_limit"] = time_limit
+    test_case["solution_count"] = solution_count
+
     # 保存到文件
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(test_case, f, ensure_ascii=False, indent=2)
@@ -194,6 +200,9 @@ def main():
     
     # 新增参数：替换选项数量范围
     parser.add_argument('--replacement-range', type=str, default='1,3', help='每个可变策略的替换选项数量范围，格式为min,max')
+
+    parser.add_argument('--time-limit', type=int, default=0, help='算法执行时间限制')
+    parser.add_argument('--solution-count', type=int, default=1, help='算法返回的方案数')
     
     args = parser.parse_args()
     
@@ -235,7 +244,9 @@ def main():
         ammunition_count_range,
         aircraft_price_range,
         ammunition_price_range,
-        args.output
+        args.output,
+        time_limit=args.time_limit,
+        solution_count=args.solution_count
     )
 
 # 交互式配置生成测试样例
