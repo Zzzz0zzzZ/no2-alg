@@ -1,13 +1,46 @@
 # coding=utf-8
+import logging
+import multiprocessing
+import time
+import traceback
+import colorlog
+
 import uvicorn
 from fastapi import FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import traceback
 
-from api.routes import router
 from api.models import CommonResponse, StatusCode
+from api.routes import router
+
+# 配置日志
+logger = logging.getLogger("api")
+# 清除现有的处理器，防止重复
+if logger.handlers:
+    logger.handlers.clear()
+logger.setLevel(logging.INFO)
+# 防止日志传播到根日志器
+logger.propagate = False
+
+# 配置彩色日志处理器
+handler = colorlog.StreamHandler()
+handler.setFormatter(colorlog.ColoredFormatter(
+    '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    log_colors={
+        'DEBUG': 'cyan',
+        'INFO': 'green',
+        'WARNING': 'yellow',
+        'ERROR': 'red',
+        'CRITICAL': 'red,bg_white',
+    }
+))
+logger.addHandler(handler)
+
+# 添加文件处理器
+file_handler = logging.FileHandler('api.log')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
 
 # 创建FastAPI应用
 app = FastAPI(title="行动优化算法API", description="行动优化算法API")
@@ -46,8 +79,34 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # 记录请求开始时间
+    start_time = time.time()
+
+    # 获取请求路径和方法
+    path = request.url.path
+    method = request.method
+
+    # 记录请求信息
+    logger.info(f"请求开始: {method} {path}")
+
+    # 处理请求
+    response = await call_next(request)
+
+    # 计算处理时间
+    process_time = time.time() - start_time
+
+    # 记录请求完成信息
+    logger.info(f"请求完成: {method} {path} - 状态码: {response.status_code} - 耗时: {process_time:.4f}秒")
+
+    return response
+
+
 # 注册路由
 app.include_router(router)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    workers_count = multiprocessing.cpu_count()  # 获取CPU核心数
+    logger.info(f"Starting server with {workers_count // 4}/{workers_count} workers")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, workers=workers_count // 4)
