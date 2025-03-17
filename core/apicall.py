@@ -20,11 +20,11 @@ def apicall(data: OptimizeDTO) -> Dict:
     """
     # 检查输入数据的有效性
     if not data.strategies:
-        raise ValueError("任务列表不能为空")
+        raise ValueError("任务列表strategies不能为空")
     if not data.actions:
-        raise ValueError("阶段列表不能为空")
+        raise ValueError("阶段列表actions不能为空")
     if not data.constraints.aircraft and not data.constraints.ammunition:
-        raise ValueError("至少需要一个资源约束条件")
+        raise ValueError("至少需要一个资源约束条件(constraints.aircraft/constraints.ammunition)")
     if data.time_limit is not None and data.time_limit == 0:
         data.time_limit = None
     if data.solution_count is not None and data.solution_count <= 0:
