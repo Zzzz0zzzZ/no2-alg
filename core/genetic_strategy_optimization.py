@@ -1,13 +1,11 @@
 # 基于遗传算法的策略优化实现
+import glob
 import json
 import os
-import glob
 import random
-import copy
 import time
 
 import matplotlib.pyplot as plt  # 添加matplotlib库用于绘图
-from typing import Dict, List, Tuple, Any, Set
 from pylab import mpl
 
 # 设置显示中文字体
