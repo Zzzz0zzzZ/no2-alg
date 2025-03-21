@@ -1,0 +1,38 @@
+{
+  "strategies_count": 34,
+  "actions_count": 2,
+  "replacement_options_count": 3,
+  "sample_replacement": {
+    "策略1-army1": {
+      "可替换策略": [
+        "策略1的替换策略-1-army8",
+        "策略1的替换策略-2-army8",
+        "策略1-army2",
+        "策略1-army3",
+        "策略1-army6",
+        "策略1-army7",
+        "策略1-army9"
+      ]
+    },
+    "策略2-army2": {
+      "可替换策略": [
+        "策略2的替换策略-1-army6",
+        "策略2-army1",
+        "策略2-army3",
+        "策略2-army6",
+        "策略2-army7",
+        "策略2-army9"
+      ]
+    },
+    "策略2-3-army3": {
+      "可替换策略": [
+        "策略2-3的替换策略-1-army6",
+        "策略2-3-army1",
+        "策略2-3-army2",
+        "策略2-3-army6",
+        "策略2-3-army7",
+        "策略2-3-army9"
+      ]
+    }
+  }
+}

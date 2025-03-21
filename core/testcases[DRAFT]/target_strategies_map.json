@@ -1,0 +1,35 @@
+{
+    "runway": {
+      "strategies": ["策略1", "策略2-1"],
+      "aircraft_requirements": {
+        "A型": ["策略1", "策略2-1"],
+        "B型": ["策略1", "策略2-1"]
+      },
+      "ammunition_requirements": {
+        "导弹X": ["策略1", "策略2-1"],
+        "炸弹Y": ["策略1", "策略2-1"]
+      }
+    },
+    "carrier": {
+      "strategies": ["策略2", "策略2-3"],
+      "aircraft_requirements": {
+        "A型": ["策略2", "策略2-3"],
+        "B型": ["策略2", "策略2-3"]
+      },
+      "ammunition_requirements": {
+        "导弹X": ["策略2", "策略2-3"],
+        "炸弹Y": ["策略2", "策略2-3"]
+      }
+    },
+    "enemy_aircraft": {
+      "strategies": ["策略2-2"],
+      "aircraft_requirements": {
+        "A型": ["策略2-2"],
+        "B型": ["策略2-2"]
+      },
+      "ammunition_requirements": {
+        "导弹X": ["策略2-2"],
+        "炸弹Y": ["策略2-2"]
+      }
+    }
+  }
