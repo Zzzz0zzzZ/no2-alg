@@ -313,7 +313,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
         total_strategies = len(new_test_case['strategies'])
         print(f"生成了 {total_strategies} 个基于军队的策略")
         print(f"结果已保存到 {output_path}")
-    
+
+    # 统计信息
+    analyze_filtered_result(new_test_case)
+
     return new_test_case
 
 # ----------------------------- 结果分析函数 -----------------------------
