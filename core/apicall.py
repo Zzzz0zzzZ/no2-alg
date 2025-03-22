@@ -1,8 +1,19 @@
 # coding=utf-8
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Literal
 import time
+from enum import IntEnum
 from api.models import OptimizeDTO
 from core.genetic_strategy_optimization import Strategy, Action, ActionList, run_optimize
+
+
+ALG_SEPARATOR = '~~~###~~~'
+
+
+# 定义替换类型枚举
+class ReplacementType(IntEnum):
+    ORIGINAL = 0  # 原方案
+    OPTIMIZED_PRICE_SAVED = 1  # 优化后方案，价格节省
+    OPTIMIZED_SAME_PRICE = 2  # 优化后方案，价格不变，兵力派遣改变
 
 
 def apicall(data: OptimizeDTO) -> Dict:
@@ -116,32 +127,51 @@ def apicall(data: OptimizeDTO) -> Dict:
         solution = {
             "sort": idx + 1,  # 排序号，从1开始
             "total_price": price,
-            "saved_amount": original_price - price if price < original_price else 0,
-            "increased_amount": price - original_price if price > original_price else 0,
+            "price_difference": abs(original_price - price),
+            "is_saving": price < original_price,
             "strategy_details": [],
-            "resource_usage": {
-                "aircraft": [],
-                "ammunition": []
-            }
+            "resource_usage": {}  # 直接按军队分类的资源使用情况
         }
         
         # 计算资源使用情况
-        # 初始化资源使用情况结构
-        for aircraft_type, total in data.constraints.aircraft.items():
-            solution["resource_usage"]["aircraft"].append({
-                "id": aircraft_type,
-                "total": total,
-                "used": 0,
-                "remaining": total
-            })
+        # 按军队分类初始化资源使用情况结构
+        solution["resource_usage"] = {}  # 直接按军队分类的资源使用情况
         
-        for ammo_type, total in data.constraints.ammunition.items():
-            solution["resource_usage"]["ammunition"].append({
-                "id": ammo_type,
-                "total": total,
-                "used": 0,
-                "remaining": total
-            })
+        # 提取所有军队ID
+        army_ids = set()
+        for resource_id in data.constraints.aircraft.keys():
+            if ALG_SEPARATOR in resource_id:
+                army_ids.add(resource_id.split(ALG_SEPARATOR)[1])
+        for resource_id in data.constraints.ammunition.keys():
+            if ALG_SEPARATOR in resource_id:
+                army_ids.add(resource_id.split(ALG_SEPARATOR)[1])
+        
+        # 初始化每个军队的资源使用情况
+        for army_id in army_ids:
+            solution["resource_usage"][army_id] = {
+                "aircraft": {},
+                "ammunition": {}
+            }
+            
+            # 初始化该军队的飞机资源
+            for aircraft_type, total in data.constraints.aircraft.items():
+                if ALG_SEPARATOR in aircraft_type and aircraft_type.split(ALG_SEPARATOR)[1] == army_id:
+                    resource_id = aircraft_type.split(ALG_SEPARATOR)[0]  # 提取资源基本ID
+                    solution["resource_usage"][army_id]["aircraft"][resource_id] = {
+                        "total": total,
+                        "used": 0,
+                        "remaining": total
+                    }
+            
+            # 初始化该军队的弹药资源
+            for ammo_type, total in data.constraints.ammunition.items():
+                if ALG_SEPARATOR in ammo_type and ammo_type.split(ALG_SEPARATOR)[1] == army_id:
+                    resource_id = ammo_type.split(ALG_SEPARATOR)[0]  # 提取资源基本ID
+                    solution["resource_usage"][army_id]["ammunition"][resource_id] = {
+                        "total": total,
+                        "used": 0,
+                        "remaining": total
+                    }
         
         # 累计各类资源的使用情况
         for action in action_list.actions:
@@ -153,35 +183,119 @@ def apicall(data: OptimizeDTO) -> Dict:
                 # 获取任务的资源使用情况
                 aircraft_usage, ammunition_usage = strategy.get_resource_usage()
                 
-                # 累计载机使用情况
+                # 累计飞机使用情况
                 for aircraft_type, count in aircraft_usage.items():
-                    for aircraft in solution["resource_usage"]["aircraft"]:
-                        if aircraft["id"] == aircraft_type:
-                            aircraft["used"] += count
-                            aircraft["remaining"] = aircraft["total"] - aircraft["used"]
-                            break
+                    if ALG_SEPARATOR in aircraft_type:
+                        resource_parts = aircraft_type.split(ALG_SEPARATOR)
+                        resource_id = resource_parts[0]
+                        resource_army_id = resource_parts[1]
+                        
+                        # 确保该军队和资源存在
+                        if resource_army_id in solution["resource_usage"] and \
+                           resource_id in solution["resource_usage"][resource_army_id]["aircraft"]:
+                            solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["used"] += count
+                            solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["remaining"] = \
+                                solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["total"] - \
+                                solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["used"]
                 
                 # 累计弹药使用情况
                 for ammo_type, count in ammunition_usage.items():
-                    for ammo in solution["resource_usage"]["ammunition"]:
-                        if ammo["id"] == ammo_type:
-                            ammo["used"] += count
-                            ammo["remaining"] = ammo["total"] - ammo["used"]
-                            break
+                    if ALG_SEPARATOR in ammo_type:
+                        resource_parts = ammo_type.split(ALG_SEPARATOR)
+                        resource_id = resource_parts[0]
+                        resource_army_id = resource_parts[1]
+                        
+                        # 确保该军队和资源存在
+                        if resource_army_id in solution["resource_usage"] and \
+                           resource_id in solution["resource_usage"][resource_army_id]["ammunition"]:
+                            solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["used"] += count
+                            solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["remaining"] = \
+                                solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["total"] - \
+                                solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["used"]
         
         # 添加任务替换详情
         for action in action_list.actions:
             for strategy in action.strategies:
                 if strategy.replaceable and strategy.id in combination:
                     replacement = combination[strategy.id]
+                    
+                    # 分割策略ID和军队ID
+                    from_parts = strategy.id.split(ALG_SEPARATOR) if ALG_SEPARATOR in strategy.id else [strategy.id, "未知军队"]
+                    to_parts = replacement.id.split(ALG_SEPARATOR) if ALG_SEPARATOR in replacement.id else [replacement.id, "未知军队"]
+                    
+                    # 提取策略ID和军队ID
+                    from_strategy_id = from_parts[0]
+                    from_army_id = from_parts[1] if len(from_parts) > 1 else "未知军队"
+                    to_strategy_id = to_parts[0]
+                    to_army_id = to_parts[1] if len(to_parts) > 1 else "未知军队"
+                    
+                    # 处理原策略的资源信息，移除分隔符和军队信息
+                    from_aircraft = {}
+                    from_ammunition = {}
+                    for aircraft_type, value in strategy.aircraft.items():
+                        resource_id = aircraft_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in aircraft_type else aircraft_type
+                        from_aircraft[resource_id] = value
+                    
+                    for ammo_type, value in strategy.ammunition.items():
+                        resource_id = ammo_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in ammo_type else ammo_type
+                        from_ammunition[resource_id] = value
+                    
+                    # 处理替换策略的资源信息，移除分隔符和军队信息
+                    to_aircraft = {}
+                    to_ammunition = {}
+                    for aircraft_type, value in replacement.aircraft.items():
+                        resource_id = aircraft_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in aircraft_type else aircraft_type
+                        to_aircraft[resource_id] = value
+                    
+                    for ammo_type, value in replacement.ammunition.items():
+                        resource_id = ammo_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in ammo_type else ammo_type
+                        to_ammunition[resource_id] = value
+                    
+                    # 计算价格差异
+                    price_diff = abs(strategy.price - replacement.price)
+                    
+                    # 根据价格差异生成描述文本
+                    if price_diff == 0:
+                        desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]也可以完成任务，价格不变"
+                    else:
+                        desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]，"\
+                                   f"{'节省' if replacement.price < strategy.price else '增加'}"\
+                                   f"{price_diff}元"
+                    
                     detail = {
-                        "from_strategy": strategy.id,
-                        "to_strategy": replacement.id,
-                        "desc": f"在阶段{action.id}中，将任务{strategy.id}替换为任务{replacement.id}，"
-                               f"{'节省' if replacement.price < strategy.price else '增加'}"
-                               f"{abs(strategy.price - replacement.price)}元"
+                        "from_strategy_id": from_strategy_id,  # 分割后的策略ID
+                        "from_army_id": from_army_id,  # 分割后的军队ID
+                        "to_strategy_id": to_strategy_id,  # 分割后的策略ID
+                        "to_army_id": to_army_id,  # 分割后的军队ID
+                        "from_strategy_details": {  # 添加原策略的详细信息（移除分隔符和军队信息）
+                            "aircraft": from_aircraft,
+                            "ammunition": from_ammunition,
+                            "price": strategy.price
+                        },
+                        "to_strategy_details": {  # 添加替换策略的详细信息（移除分隔符和军队信息）
+                            "aircraft": to_aircraft,
+                            "ammunition": to_ammunition,
+                            "price": replacement.price
+                        },
+                        "price_difference": price_diff,
+                        "is_saving": replacement.price < strategy.price,
+                        "desc": desc_text
                     }
                     solution["strategy_details"].append(detail)
+        
+        # 添加替换类型和替换说明
+        if not solution["strategy_details"]:
+            # 原方案
+            solution["replacement_type"] = ReplacementType.ORIGINAL
+            solution["replacement_desc"] = "本方案为原方案，价格不变"
+        elif price == original_price:
+            # 优化后方案，价格不变，兵力派遣改变
+            solution["replacement_type"] = ReplacementType.OPTIMIZED_SAME_PRICE
+            solution["replacement_desc"] = "本方案为优化后方案，价格不变，兵力派遣改变"
+        else:
+            # 优化后方案，价格节省
+            solution["replacement_type"] = ReplacementType.OPTIMIZED_PRICE_SAVED
+            solution["replacement_desc"] = f"本方案为优化后方案，价格节省{original_price - price}元，兵力派遣改变"
         
         solutions.append(solution)
     
@@ -189,7 +303,8 @@ def apicall(data: OptimizeDTO) -> Dict:
         "elapsed_time": elapsed_time,
         "solution_count": len(solutions),
         "original_price": original_price,
-        "saved_amount": original_price - total_prices[0],
+        "price_difference": abs(original_price - total_prices[0]),
+        "is_saving": total_prices[0] < original_price,
         "best_price": total_prices[0],  # 第一个方案的价格就是最优价格
         "solutions": solutions
     }
