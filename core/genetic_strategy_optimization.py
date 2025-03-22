@@ -321,9 +321,6 @@ class ActionList:
         # 记录最优解集合
         best_solutions = []
         best_prices = []
-        
-        # 用于全局去重的集合，跟踪整个算法运行过程中见过的所有方案
-        global_seen_combinations = set()
 
         # 用于记录收敛曲线数据
         convergence_data = [] if plot_convergence else None
@@ -357,6 +354,7 @@ class ActionList:
             # 更新最优解集合
             new_best_solutions = []
             new_best_prices = []
+            seen_combinations = set()  # 用于记录已经见过的方案
 
             for individual, fitness, price in valid_solutions:
                 # 解码当前个体
@@ -365,19 +363,22 @@ class ActionList:
                 # 将combination转换为可哈希的形式以便去重
                 combination_tuple = tuple(sorted((k, v.id) for k, v in combination.items()))
 
-                # 如果这个方案还没在全局中见过，且（最优解集合未满或者比当前最差的解更好）
-                if combination_tuple not in global_seen_combinations and \
+                # 如果这个方案还没见过，且（最优解集合未满或者比当前最差的解更好）
+                if combination_tuple not in seen_combinations and \
                         (len(new_best_solutions) < solution_count or price < max(new_best_prices)):
 
                     # 如果最优解集合已满，移除价格最高的解
                     if len(new_best_solutions) >= solution_count:
                         max_price_index = new_best_prices.index(max(new_best_prices))
+                        old_combination = new_best_solutions[max_price_index]
+                        old_combination_tuple = tuple(sorted((k, v.id) for k, v in old_combination.items()))
+                        seen_combinations.remove(old_combination_tuple)
                         new_best_solutions.pop(max_price_index)
                         new_best_prices.pop(max_price_index)
 
                     new_best_solutions.append(combination)
                     new_best_prices.append(price)
-                    global_seen_combinations.add(combination_tuple)  # 添加到全局去重集合
+                    seen_combinations.add(combination_tuple)
 
                     if fitness > current_best_valid_fitness:
                         current_best_valid_fitness = fitness
@@ -428,19 +429,7 @@ class ActionList:
         if not best_solutions:
             return [], [float('inf')], convergence_data
 
-        # 最终结果去重
-        final_solutions = []
-        final_prices = []
-        final_seen = set()
-        
-        for solution, price in zip(best_solutions, best_prices):
-            solution_tuple = tuple(sorted((k, v.id) for k, v in solution.items()))
-            if solution_tuple not in final_seen:
-                final_solutions.append(solution)
-                final_prices.append(price)
-                final_seen.add(solution_tuple)
-
-        return final_solutions, final_prices, convergence_data
+        return best_solutions, best_prices, convergence_data
 
     def _plot_convergence_curve(self, convergence_data):
         """
