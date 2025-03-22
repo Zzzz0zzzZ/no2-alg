@@ -14,34 +14,80 @@ def main():
     # 获取当前文件所在目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # 设置文件路径
+    # 设置文件路径 - 现在只需要test_case_3.json一个文件
     test_case_path = os.path.join(current_dir, 'test_case_3.json')
-    armys_path = os.path.join(current_dir, 'armys.json')
     output_path = os.path.join(current_dir, 'test_case_3_filtered.json')
     
     # 执行策略初筛
     print("开始执行策略初筛...")
-    result = generate_army_specific_strategies(test_case_path, armys_path, output_path)
+    result = generate_army_specific_strategies(test_case_path, output_path)
     print("策略初筛完成！")
     
     # 输出统计信息
     print("\n==== 统计信息 ====")
     print(f"策略总数: {len(result['strategies'])}")
     
-    # 检查策略是否都包含army信息
-    all_have_army = True
-    strategy_by_army = {}
+    # 检查策略资源是否都包含army信息
+    all_resources_have_army = True
+    strategy_by_army = {}  # 记录每个军队的策略数量
+    replaceable_count = 0  # 记录可替换策略数量
+    non_replaceable_count = 0  # 记录不可替换策略数量
     
-    for strategy_id in result['strategies'].keys():
-        if '-army' not in strategy_id:
-            all_have_army = False
+    # 检查约束资源
+    print("\n==== 约束资源检查 ====")
+    aircraft_count = len(result['constraints']['aircraft'])
+    ammunition_count = len(result['constraints']['ammunition'])
+    print(f"约束中的飞机类型数量: {aircraft_count}")
+    print(f"约束中的弹药类型数量: {ammunition_count}")
+    
+    # 检查资源名称中是否都包含军队信息
+    aircraft_with_army = sum(1 for name in result['constraints']['aircraft'] if '-army' in name)
+    ammunition_with_army = sum(1 for name in result['constraints']['ammunition'] if '-army' in name)
+    
+    print(f"带有军队信息的飞机类型数量: {aircraft_with_army} ({(aircraft_with_army/aircraft_count)*100 if aircraft_count else 0:.1f}%)")
+    print(f"带有军队信息的弹药类型数量: {ammunition_with_army} ({(ammunition_with_army/ammunition_count)*100 if ammunition_count else 0:.1f}%)")
+    
+    # 遍历所有策略，检查其军队信息、资源信息和可替换属性
+    for strategy_id, strategy in result['strategies'].items():
+        # 检查格式是否为策略ID-army格式（至少包含一个连字符）
+        parts = strategy_id.split('-')
+        if len(parts) < 2:
             print(f"警告: 策略 {strategy_id} 没有army信息")
+            continue
+            
+        # 提取军队ID（最后一部分是军队ID）
+        army_id = parts[-1]
+        strategy_by_army[army_id] = strategy_by_army.get(army_id, 0) + 1
+        
+        # 统计可替换和不可替换的策略
+        if strategy.get('replaceable', False):
+            replaceable_count += 1
         else:
-            army_id = strategy_id.split('-')[-1]
-            strategy_by_army[army_id] = strategy_by_army.get(army_id, 0) + 1
+            non_replaceable_count += 1
+        
+        # 检查策略中的资源名称是否包含军队信息
+        has_resources_without_army = False
+        
+        # 检查飞机资源名称
+        for aircraft_name in strategy['aircraft']:
+            if '-army' not in aircraft_name:
+                has_resources_without_army = True
+                print(f"警告: 策略 {strategy_id} 的飞机资源 {aircraft_name} 没有army信息")
+        
+        # 检查弹药资源名称
+        for ammo_name in strategy['ammunition']:
+            if '-army' not in ammo_name:
+                has_resources_without_army = True
+                print(f"警告: 策略 {strategy_id} 的弹药资源 {ammo_name} 没有army信息")
+        
+        if has_resources_without_army:
+            all_resources_have_army = False
     
-    if all_have_army:
-        print("所有策略都包含army信息 ✓")
+    if all_resources_have_army:
+        print("\n所有策略中的资源名称都包含army信息 ✓")
+    
+    print(f"\n可替换策略数量: {replaceable_count}")
+    print(f"不可替换策略数量: {non_replaceable_count}")
     
     # 输出每个军队的策略数量
     print("\n各军队的策略数量:")
@@ -50,43 +96,55 @@ def main():
     
     # 检查替换选项
     print("\n==== 替换选项信息 ====")
-    replacement_counts = {}
-    same_strategy_different_army_counts = {}
+    replacement_counts = {}  # 记录每个策略的替换选项数量
+    same_strategy_different_army_counts = {}  # 记录每个策略不同军队版本的替换选项数量
     
+    # 遍历所有替换选项
     for strategy_id, options in result['replacement_options'].items():
-        if '-army' not in strategy_id:
+        # 检查策略ID是否包含军队信息
+        parts = strategy_id.split('-')
+        if len(parts) < 2:
             print(f"警告: 替换选项中的策略 {strategy_id} 没有army信息")
             continue
             
-        base_strategy_id = strategy_id.rsplit('-', 1)[0]  # 获取不带army的策略ID
-        army_id = strategy_id.split('-')[-1]
+        # 提取策略基本ID（不含军队信息）和军队ID
+        base_strategy_id = '-'.join(parts[:-1])  # 获取不带army的策略ID
+        army_id = parts[-1]
         
-        # 统计替换选项数量
-        replacement_count = len(options['可替换策略'])
+        # 统计替换选项数量（options现在是一个数组）
+        replacement_count = len(options)
         replacement_counts[strategy_id] = replacement_count
         
-        # 统计同一策略不同军队的替换选项数量
-        same_strategy_count = 0
-        different_strategy_count = 0
+        # 分析替换选项类型（同一策略不同军队 vs 不同策略）
+        same_strategy_count = 0  # 同一策略不同军队的数量
+        different_strategy_count = 0  # 不同策略的数量
         
-        for replacement_id in options['可替换策略']:
-            if '-army' not in replacement_id:
+        # 遍历所有替换选项
+        for replacement_id in options:
+            # 检查替换选项是否包含军队信息
+            replacement_parts = replacement_id.split('-')
+            if len(replacement_parts) < 2:
                 print(f"  警告: 替换策略 {replacement_id} 没有army信息")
                 continue
                 
-            replacement_base_id = replacement_id.rsplit('-', 1)[0]
+            # 提取替换策略的基本ID（不含军队信息）
+            replacement_base_id = '-'.join(replacement_parts[:-1])
             
+            # 判断替换选项是否是同一策略的不同军队版本
             if replacement_base_id == base_strategy_id:
                 same_strategy_count += 1
             else:
                 different_strategy_count += 1
         
+        # 记录同一策略不同军队的替换选项数量
         same_strategy_different_army_counts[strategy_id] = same_strategy_count
         
+        # 输出替换选项统计信息
         print(f"策略 {strategy_id} 有 {replacement_count} 个可替换策略:")
         print(f"  - 同一策略不同军队: {same_strategy_count}个")
         print(f"  - 不同策略: {different_strategy_count}个")
         
+    # 输出替换选项总数
     print(f"\n替换选项总数: {len(result['replacement_options'])}")
     
     # 计算每个策略平均有多少替换选项
@@ -106,7 +164,8 @@ def main():
         # 检查行动中的策略是否都有army信息
         all_actions_have_army = True
         for strategy_id in strategy_ids:
-            if '-army' not in strategy_id:
+            parts = strategy_id.split('-')
+            if len(parts) < 2:
                 all_actions_have_army = False
                 print(f"  警告: 行动中的策略 {strategy_id} 没有army信息")
         
@@ -118,8 +177,24 @@ def main():
         "strategies_count": len(result['strategies']),
         "actions_count": len(result['actions']),
         "replacement_options_count": len(result['replacement_options']),
-        "sample_replacement": {}
+        "replaceable_strategies_count": replaceable_count,
+        "non_replaceable_strategies_count": non_replaceable_count,
+        "aircraft_types_count": aircraft_count,
+        "ammunition_types_count": ammunition_count,
+        "sample_strategies": {},
+        "sample_replacement": {},
+        "sample_constraints": {
+            "aircraft": dict(list(result['constraints']['aircraft'].items())[:5]),
+            "ammunition": dict(list(result['constraints']['ammunition'].items())[:5])
+        }
     }
+    
+    # 添加一些示例策略
+    sample_count = 0
+    for strategy_id, strategy in result['strategies'].items():
+        if sample_count < 3:  # 只显示前3个策略
+            simplified_result["sample_strategies"][strategy_id] = strategy
+            sample_count += 1
     
     # 添加一些示例替换选项
     sample_count = 0
@@ -136,4 +211,4 @@ def main():
     print(f"\n简化的统计结果已保存到 {simplified_path}")
 
 if __name__ == "__main__":
-    main() 
+    main()
