@@ -3,7 +3,8 @@ import time
 from enum import IntEnum
 from typing import Dict
 
-from api.models import OptimizeDTO
+from api.models import OptimizeDTO, TestCaseDTO, Constraints
+from core.preprocessor import generate_army_specific_strategies
 from core.genetic_strategy_optimization import Strategy, Action, ActionList, run_optimize
 
 ALG_SEPARATOR = '~~~###~~~'
@@ -16,9 +17,9 @@ class ReplacementType(IntEnum):
     OPTIMIZED_SAME_PRICE = 2  # 优化后方案，价格不变，兵力派遣改变
 
 
-def apicall(data: OptimizeDTO) -> Dict:
+def apicall(data: TestCaseDTO) -> Dict:
     """
-    API调用入口，处理OptimizeDTO输入并调用优化算法
+    API调用入口，处理TestCaseDTO输入，根据策略库扩充分队级策略，并调用优化算法
     
     Args:
         data: OptimizeDTO对象，包含任务、阶段和约束条件信息
@@ -29,6 +30,20 @@ def apicall(data: OptimizeDTO) -> Dict:
     Raises:
         ValueError: 当输入数据无效或不完整时抛出
     """
+
+    # 根据策略库信息，扩充分队级策略
+    filtered_data = generate_army_specific_strategies(data)
+
+    # 构建优化所需的OptimizeDTO
+    data = OptimizeDTO(
+        strategies=filtered_data['strategies'],
+        actions=filtered_data['actions'],
+        replacement_options=filtered_data['replacement_options'],
+        constraints=Constraints(**filtered_data['constraints']),
+        time_limit=filtered_data.get('time_limit'),
+        solution_count=filtered_data.get('solution_count')
+    )
+
     # 检查输入数据的有效性
     if not data.strategies:
         raise ValueError("任务列表strategies不能为空")

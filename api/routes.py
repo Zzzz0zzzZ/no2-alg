@@ -5,7 +5,6 @@ from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 
 from api.models import *
-from api.strategy_processor import generate_army_specific_strategies
 from core import apicall as alg
 
 # 创建路由器
@@ -22,21 +21,8 @@ async def root():
 @router.post("/alg/optimize", response_model=CommonResponse)
 async def optimize(data: TestCaseDTO):
     try:
-        # 直接调用策略处理函数处理数据对象，无需创建临时文件
-        filtered_data = generate_army_specific_strategies(data)
-
-        # 构建优化所需的OptimizeDTO
-        optimize_data = OptimizeDTO(
-            strategies=filtered_data['strategies'],
-            actions=filtered_data['actions'],
-            replacement_options=filtered_data['replacement_options'],
-            constraints=Constraints(**filtered_data['constraints']),
-            time_limit=filtered_data.get('time_limit'),
-            solution_count=filtered_data.get('solution_count')
-        )
-
         # 调用优化算法
-        res = alg.apicall(optimize_data)
+        res = alg.apicall(data)
 
         if len(res["solutions"]) == 0:
             return CommonResponse(
