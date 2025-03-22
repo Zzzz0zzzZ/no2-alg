@@ -20,17 +20,6 @@ class CommonResponse(BaseModel):
     data: Optional[Dict[str, Any]] = None
 
 
-# /alg/prepare 入参
-class PrepareDTO(BaseModel):
-    test_case_path: str  # 测试用例文件路径
-
-
-# /strategy/process 入参
-class StrategyProcessDTO(BaseModel):
-    input_file_path: str  # 输入文件路径
-    output_dir: Optional[str] = None  # 输出目录，默认为输入文件所在目录
-
-
 # 策略定义
 class Strategy(BaseModel):
     replaceable: bool
@@ -51,7 +40,7 @@ class Constraints(BaseModel):
     ammunition: Dict[str, int]  # 弹药约束，键为弹药类型，值为最大数量
 
 
-# 新增: 接收test_case_3.json格式的数据结构
+# 新增: test_case_new_1.json格式的数据结构
 class TestCaseDTO(BaseModel):
     strategies: Dict[str, Strategy]  # 键为策略ID，值为策略详情
     actions: Dict[str, List[str]]  # 键为行动ID，值为策略ID列表
