@@ -6,6 +6,9 @@ import copy
 import os
 from pathlib import Path
 
+
+ALG_SEPARATOR = '~~~###~~~'
+
 # ----------------------------- 核心处理函数 -----------------------------
 
 def load_json_file(file_path):
@@ -33,7 +36,7 @@ def check_strategy_feasible_for_army(strategy, army, amended_strategy=None, army
         # 如果需要修改策略资源名称，添加军队标识
         if amended_strategy is not None:
             # 使用传入的army_id创建带有军队ID的新资源名称
-            new_aircraft_type = f"{aircraft_type}-{army_id}"
+            new_aircraft_type = f"{aircraft_type}{ALG_SEPARATOR}{army_id}"
             
             # 在修改后的策略中使用新的资源名称
             if aircraft_type in strategy['aircraft']:
@@ -52,7 +55,7 @@ def check_strategy_feasible_for_army(strategy, army, amended_strategy=None, army
         # 如果需要修改策略资源名称，添加军队标识
         if amended_strategy is not None:
             # 使用传入的army_id创建带有军队ID的新资源名称
-            new_ammo_type = f"{ammo_type}-{army_id}"
+            new_ammo_type = f"{ammo_type}{ALG_SEPARATOR}{army_id}"
             
             # 在修改后的策略中使用新的资源名称
             if ammo_type in strategy['ammunition']:
@@ -72,12 +75,12 @@ def generate_resource_constraints(armies):
     for army_id, army in armies.items():
         # 处理飞机资源
         for aircraft_type, details in army['aircraft'].items():
-            new_aircraft_type = f"{aircraft_type}-{army_id}"
+            new_aircraft_type = f"{aircraft_type}{ALG_SEPARATOR}{army_id}"
             constraints["aircraft"][new_aircraft_type] = details['数量']
         
         # 处理弹药资源
         for ammo_type, details in army['ammunition'].items():
-            new_ammo_type = f"{ammo_type}-{army_id}"
+            new_ammo_type = f"{ammo_type}{ALG_SEPARATOR}{army_id}"
             constraints["ammunition"][new_ammo_type] = details['数量']
     
     return constraints
@@ -168,7 +171,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 # 检查策略是否可以由该军队完成
                 if check_strategy_feasible_for_army(strategy, other_army, other_new_strategy, other_army_id):
                     # 创建带有军队ID的新策略ID
-                    new_strategy_id = f"{strategy_id}-{other_army_id}"
+                    new_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{other_army_id}"
                     new_strategy_ids[strategy_id].append(new_strategy_id)
 
                     # # 移除army_init字段，因为它已经在ID中体现
@@ -194,7 +197,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
             
             if check_strategy_feasible_for_army(strategy, army, new_strategy, army_init):
                 # 创建带有军队ID的新策略ID
-                new_strategy_id = f"{strategy_id}-{army_init}"
+                new_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{army_init}"
                 new_strategy_ids[strategy_id].append(new_strategy_id)
                 
                 # 移除army_init字段，因为它已经在ID中体现
@@ -221,7 +224,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 # 检查策略是否可以由该军队完成
                 if check_strategy_feasible_for_army(strategy, other_army, other_new_strategy, other_army_id):
                     # 创建带有军队ID的新策略ID
-                    new_strategy_id = f"{strategy_id}-{other_army_id}"
+                    new_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{other_army_id}"
                     new_strategy_ids[strategy_id].append(new_strategy_id)
                     
                     # 移除army_init字段，因为它已经在ID中体现
@@ -243,7 +246,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 strategy = test_case['strategies'][strategy_id]
                 if(strategy.get('replaceable', True)):
                     army_init = strategy.get('army_init', 'army1')
-                    init_strategy_id = f"{strategy_id}-{army_init}"
+                    init_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{army_init}"
                     
                     # 优先使用初始军队版本
                     if init_strategy_id in new_test_case['strategies']:
@@ -263,7 +266,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 army_init = strategy.get('army_init', 'army1')
                 
                 # 创建原策略的初始军队版本ID
-                init_strategy_id = f"{original_strategy_id}-{army_init}"
+                init_strategy_id = f"{original_strategy_id}{ALG_SEPARATOR}{army_init}"
                 
                 # 确保这个策略的军队特定版本存在，且该策略是可替换的
                 if init_strategy_id in new_test_case['strategies'] and new_test_case['strategies'][init_strategy_id].get('replaceable', False):
@@ -355,7 +358,7 @@ def analyze_filtered_result(result):
     # 遍历所有策略，检查其军队信息、资源信息和可替换属性
     for strategy_id, strategy in result['strategies'].items():
         # 检查格式是否为策略ID-army格式（至少包含一个连字符）
-        parts = strategy_id.split('-')
+        parts = strategy_id.split(f'{ALG_SEPARATOR}')
         if len(parts) < 2:
             print(f"警告: 策略 {strategy_id} 没有army信息")
             continue
@@ -407,13 +410,13 @@ def analyze_filtered_result(result):
     # 遍历所有替换选项
     for strategy_id, options in result['replacement_options'].items():
         # 检查策略ID是否包含军队信息
-        parts = strategy_id.split('-')
+        parts = strategy_id.split(f'{ALG_SEPARATOR}')
         if len(parts) < 2:
             print(f"警告: 替换选项中的策略 {strategy_id} 没有army信息")
             continue
             
         # 提取策略基本ID（不含军队信息）和军队ID
-        base_strategy_id = '-'.join(parts[:-1])  # 获取不带army的策略ID
+        base_strategy_id = f'{ALG_SEPARATOR}'.join(parts[:-1])  # 获取不带army的策略ID
         army_id = parts[-1]
         
         # 统计替换选项数量（options现在是一个数组）
@@ -427,13 +430,13 @@ def analyze_filtered_result(result):
         # 遍历所有替换选项
         for replacement_id in options:
             # 检查替换选项是否包含军队信息
-            replacement_parts = replacement_id.split('-')
+            replacement_parts = replacement_id.split(f'{ALG_SEPARATOR}')
             if len(replacement_parts) < 2:
                 print(f"  警告: 替换策略 {replacement_id} 没有army信息")
                 continue
                 
             # 提取替换策略的基本ID（不含军队信息）
-            replacement_base_id = '-'.join(replacement_parts[:-1])
+            replacement_base_id = f'{ALG_SEPARATOR}'.join(replacement_parts[:-1])
             
             # 判断替换选项是否是同一策略的不同军队版本
             if replacement_base_id == base_strategy_id:
@@ -469,7 +472,7 @@ def analyze_filtered_result(result):
         # 检查行动中的策略是否都有army信息
         all_actions_have_army = True
         for strategy_id in strategy_ids:
-            parts = strategy_id.split('-')
+            parts = strategy_id.split(f'{ALG_SEPARATOR}')
             if len(parts) < 2:
                 all_actions_have_army = False
                 print(f"  警告: 行动中的策略 {strategy_id} 没有army信息")
