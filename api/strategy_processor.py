@@ -129,37 +129,62 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
         new_strategy_ids[strategy_id] = []
         
         # 获取策略的初始军队信息
-        army_init = strategy.get('army_init', 'army1')
+        # army_init = strategy.get('army_init', 'army1')
         is_replaceable = strategy.get('replaceable', False)  # 默认不可替换
-        
-        # 对于不可替换的策略，只创建初始军队版本
+
         if not is_replaceable:
             # 检查策略是否可以由指定的初始军队完成
-            army = armies.get(army_init, {})
+            # army = armies.get(army_init, {})
             
-            # 创建修改后的策略副本
-            new_strategy = copy.deepcopy(strategy)
-            new_strategy['aircraft'] = {}  # 清空原始资源
-            new_strategy['ammunition'] = {}  # 清空原始资源
-            
-            if check_strategy_feasible_for_army(strategy, army, new_strategy, army_init):
-                # 创建带有军队ID的新策略ID
-                new_strategy_id = f"{strategy_id}-{army_init}"
-                new_strategy_ids[strategy_id].append(new_strategy_id)
-                
-                # 移除army_init字段，因为它已经在ID中体现
-                if 'army_init' in new_strategy:
-                    del new_strategy['army_init']
-                
-                # 保持replaceable字段为false
-                new_strategy['replaceable'] = False
-                
-                # 添加到新测试用例中
-                new_test_case['strategies'][new_strategy_id] = new_strategy
+            # # 创建修改后的策略副本
+            # new_strategy = copy.deepcopy(strategy)
+            # new_strategy['aircraft'] = {}  # 清空原始资源
+            # new_strategy['ammunition'] = {}  # 清空原始资源
+            #
+            # if check_strategy_feasible_for_army(strategy, army, new_strategy, army_init):
+            #     # 创建带有军队ID的新策略ID
+            #     new_strategy_id = f"{strategy_id}-{army_init}"
+            #     new_strategy_ids[strategy_id].append(new_strategy_id)
+            #
+            #     # 移除army_init字段，因为它已经在ID中体现
+            #     if 'army_init' in new_strategy:
+            #         del new_strategy['army_init']
+            #
+            #     # 保持replaceable字段为false
+            #     new_strategy['replaceable'] = False
+            #
+            #     # 添加到新测试用例中
+            #     new_test_case['strategies'][new_strategy_id] = new_strategy
+            for other_army_id, other_army in armies.items():
+                # 如果是初始军队且已经处理过，则跳过
+                # if other_army_id == army_init:
+                #     continue
+
+                # 创建修改后的策略副本
+                other_new_strategy = copy.deepcopy(strategy)
+                other_new_strategy['aircraft'] = {}  # 清空原始资源
+                other_new_strategy['ammunition'] = {}  # 清空原始资源
+
+                # 检查策略是否可以由该军队完成
+                if check_strategy_feasible_for_army(strategy, other_army, other_new_strategy, other_army_id):
+                    # 创建带有军队ID的新策略ID
+                    new_strategy_id = f"{strategy_id}-{other_army_id}"
+                    new_strategy_ids[strategy_id].append(new_strategy_id)
+
+                    # # 移除army_init字段，因为它已经在ID中体现
+                    # if 'army_init' in other_new_strategy:
+                    #     del other_new_strategy['army_init']
+
+                    # 非初始军队版本不可替换
+                    other_new_strategy['replaceable'] = False
+
+                    # 添加到新测试用例中
+                    new_test_case['strategies'][new_strategy_id] = other_new_strategy
         
         # 对于可替换的策略，创建所有可行的军队版本
         else:
             # 首先，创建初始军队版本
+            army_init = strategy.get('army_init', 'army1')
             army = armies.get(army_init, {})
             
             # 创建修改后的策略副本
@@ -216,15 +241,16 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
             if strategy_id in new_strategy_ids and new_strategy_ids[strategy_id]:
                 # 获取该策略的初始军队
                 strategy = test_case['strategies'][strategy_id]
-                army_init = strategy.get('army_init', 'army1')
-                init_strategy_id = f"{strategy_id}-{army_init}"
-                
-                # 优先使用初始军队版本
-                if init_strategy_id in new_test_case['strategies']:
-                    new_test_case['actions'][action_id].append(init_strategy_id)
-                else:
-                    # 如果初始军队版本不可行，使用第一个可行的军队版本
-                    new_test_case['actions'][action_id].append(new_strategy_ids[strategy_id][0])
+                if(strategy.get('replaceable', True)):
+                    army_init = strategy.get('army_init', 'army1')
+                    init_strategy_id = f"{strategy_id}-{army_init}"
+                    
+                    # 优先使用初始军队版本
+                    if init_strategy_id in new_test_case['strategies']:
+                        new_test_case['actions'][action_id].append(init_strategy_id)
+                    else:
+                        # 如果初始军队版本不可行，使用第一个可行的军队版本
+                        new_test_case['actions'][action_id].append(new_strategy_ids[strategy_id][0])
     
     # 第三步：更新替换选项，只为可替换策略(replaceable=true)创建替换选项
     # 确保包含原始替换策略的所有可行军队版本
@@ -233,53 +259,46 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
         if original_strategy_id in test_case['strategies']:
             # 获取原策略信息
             strategy = test_case['strategies'][original_strategy_id]
-            army_init = strategy.get('army_init', 'army1')
-            
-            # 创建原策略的初始军队版本ID
-            init_strategy_id = f"{original_strategy_id}-{army_init}"
-            
-            # 确保这个策略的军队特定版本存在，且该策略是可替换的
-            if init_strategy_id in new_test_case['strategies'] and new_test_case['strategies'][init_strategy_id].get('replaceable', False):
-                # 创建替换选项数组
-                new_test_case['replacement_options'][init_strategy_id] = []
+            if(strategy.get('replaceable', True)):
+                army_init = strategy.get('army_init', 'army1')
                 
-                # 添加所有可行的替换策略（带有军队信息）
-                for replacement_id in replacement_ids:
-                    if replacement_id in new_strategy_ids:
-                        # 找到所有可行的军队特定版本
-                        replacement_versions = new_strategy_ids[replacement_id]
-                        
-                        # 获取替换策略本身的信息
-                        replacement_strategy = test_case['strategies'][replacement_id]
-                        replacement_army_init = replacement_strategy.get('army_init', 'army1')
-                        
-                        # 首先添加替换策略的初始军队版本（如果存在）
-                        init_replacement_id = f"{replacement_id}-{replacement_army_init}"
-                        if init_replacement_id in new_test_case['strategies']:
-                            new_test_case['replacement_options'][init_strategy_id].append(init_replacement_id)
-                        
-                        # 添加替换策略的所有其他可行军队版本
-                        for version_id in replacement_versions:
-                            if version_id != init_replacement_id:  # 避免重复添加初始军队版本
+                # 创建原策略的初始军队版本ID
+                init_strategy_id = f"{original_strategy_id}-{army_init}"
+                
+                # 确保这个策略的军队特定版本存在，且该策略是可替换的
+                if init_strategy_id in new_test_case['strategies'] and new_test_case['strategies'][init_strategy_id].get('replaceable', False):
+                    # 创建替换选项数组
+                    new_test_case['replacement_options'][init_strategy_id] = []
+                    
+                    # 添加所有可行的替换策略（带有军队信息）
+                    for replacement_id in replacement_ids:
+                        if replacement_id in new_strategy_ids:
+                            # 找到所有可行的军队特定版本
+                            replacement_versions = new_strategy_ids[replacement_id]
+                            
+                            # 获取替换策略本身的信息
+                            replacement_strategy = test_case['strategies'][replacement_id]
+                            # 添加替换策略的所有其他可行军队版本
+                            for version_id in replacement_versions:
                                 new_test_case['replacement_options'][init_strategy_id].append(version_id)
-                        
-                        # 递归添加替换策略的替换选项（如果存在）
-                        if replacement_id in test_case['replacement_options']:
-                            for nested_replacement_id in test_case['replacement_options'][replacement_id]:
-                                if nested_replacement_id in new_strategy_ids:
-                                    # 添加嵌套替换策略的所有可行军队版本
-                                    new_test_case['replacement_options'][init_strategy_id].extend(
-                                        new_strategy_ids[nested_replacement_id]
-                                    )
-                
-                # 添加原策略的其他军队版本作为替换选项
-                for other_version_id in new_strategy_ids[original_strategy_id]:
-                    # 不要将策略自身添加为替换选项
-                    if other_version_id != init_strategy_id:
-                        new_test_case['replacement_options'][init_strategy_id].append(other_version_id)
-                
-                # 去除重复的替换选项
-                new_test_case['replacement_options'][init_strategy_id] = list(set(new_test_case['replacement_options'][init_strategy_id]))
+                            
+                            # 递归添加替换策略的替换选项（如果存在）
+                            # if replacement_id in test_case['replacement_options']:
+                            #     for nested_replacement_id in test_case['replacement_options'][replacement_id]:
+                            #         if nested_replacement_id in new_strategy_ids:
+                            #             # 添加嵌套替换策略的所有可行军队版本
+                            #             new_test_case['replacement_options'][init_strategy_id].extend(
+                            #                 new_strategy_ids[nested_replacement_id]
+                            #             )
+                    
+                    # 添加原策略的其他军队版本作为替换选项
+                    for other_version_id in new_strategy_ids[original_strategy_id]:
+                        # 不要将策略自身添加为替换选项
+                        if other_version_id != init_strategy_id:
+                            new_test_case['replacement_options'][init_strategy_id].append(other_version_id)
+                    
+                    # 去除重复的替换选项
+                    new_test_case['replacement_options'][init_strategy_id] = list(set(new_test_case['replacement_options'][init_strategy_id]))
     
     # 如果提供了输出路径，保存处理结果
     if output_path:
