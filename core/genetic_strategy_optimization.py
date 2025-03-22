@@ -428,8 +428,23 @@ class ActionList:
         # 如果没有找到满足约束的解，返回空方案列表
         if not best_solutions:
             return [], [float('inf')], convergence_data
-
-        return best_solutions, best_prices, convergence_data
+            
+        # 在返回前对最终结果进行去重
+        unique_solutions = []
+        unique_prices = []
+        seen_combinations = set()
+        
+        for solution, price in zip(best_solutions, best_prices):
+            # 将solution转换为可哈希的形式以便去重
+            solution_tuple = tuple(sorted((k, v.id) for k, v in solution.items()))
+            
+            # 如果这个方案还没见过，添加到最终结果中
+            if solution_tuple not in seen_combinations:
+                unique_solutions.append(solution)
+                unique_prices.append(price)
+                seen_combinations.add(solution_tuple)
+        
+        return unique_solutions, unique_prices, convergence_data
 
     def _plot_convergence_curve(self, convergence_data):
         """
