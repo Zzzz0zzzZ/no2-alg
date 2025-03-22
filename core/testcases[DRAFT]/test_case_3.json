@@ -26,7 +26,7 @@
     },
     "策略1的替换策略-1": {
       "replaceable": false,
-      "army_init": "army1",
+      "army_init": "army4",
       "aircraft": {
         "A型-G": [2, 499],
         "B型": [1, 2000]
@@ -38,7 +38,7 @@
     },
     "策略1的替换策略-2": {
       "replaceable": false,
-      "army_init": "army1",
+      "army_init": "army5",
       "aircraft": {
         "A型-G-1": [3, 299],
         "B型": [1, 2000]
@@ -50,7 +50,7 @@
     },
     "策略2的替换策略-1": {
       "replaceable": false,
-      "army_init": "army2",
+      "army_init": "army5",
       "aircraft": {
         "A型": [1, 1000],
         "B型": [1, 2000]
@@ -98,7 +98,7 @@
     },
     "策略2-3的替换策略-1": {
       "replaceable": false,
-      "army_init": "army3",
+      "army_init": "army5",
       "aircraft": {
         "A型": [1, 1000],
         "B型": [1, 2000]
@@ -122,18 +122,18 @@
     "army1":{
       "aircraft":{
         "A型":{
-          "数量":1
+          "数量":4
         },
         "B型":{
-          "数量":1
+          "数量":4
         }
       },
       "ammunition":{
         "导弹X":{
-          "数量":1
+          "数量":4
         },
         "炸弹Y":{
-          "数量":1
+          "数量":4
         }
       }
     },
@@ -179,7 +179,7 @@
           "数量":3
         },
         "B型":{
-          "数量":0
+          "数量":1
         },
         "A型-G":{
           "数量":2
@@ -200,13 +200,13 @@
     "army5":{
       "aircraft":{
         "A型":{
-          "数量":0
+          "数量":2
         },
         "B型":{
           "数量":3
         },
         "A型-G-1":{
-          "数量":2
+          "数量":3
         }
       },
       "ammunition":{
@@ -326,5 +326,7 @@
         }
       }
     }
-  }
+  },
+  "time_limit": 50,
+  "solution_count": 3
 }

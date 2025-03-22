@@ -69,6 +69,29 @@
         ]
       }
     },
+    "策略1-army4": {
+      "replaceable": false,
+      "aircraft": {
+        "A型-army4": [
+          1,
+          1000
+        ],
+        "B型-army4": [
+          1,
+          2000
+        ]
+      },
+      "ammunition": {
+        "导弹X-army4": [
+          1,
+          500
+        ],
+        "炸弹Y-army4": [
+          1,
+          300
+        ]
+      }
+    },
     "策略1-army6": {
       "replaceable": false,
       "aircraft": {
@@ -202,6 +225,29 @@
           500
         ],
         "炸弹Y-army3": [
+          1,
+          300
+        ]
+      }
+    },
+    "策略2-army4": {
+      "replaceable": false,
+      "aircraft": {
+        "A型-army4": [
+          1,
+          1000
+        ],
+        "B型-army4": [
+          1,
+          2000
+        ]
+      },
+      "ammunition": {
+        "导弹X-army4": [
+          1,
+          500
+        ],
+        "炸弹Y-army4": [
           1,
           300
         ]
@@ -391,6 +437,29 @@
         ]
       }
     },
+    "策略2-3-army4": {
+      "replaceable": false,
+      "aircraft": {
+        "A型-army4": [
+          1,
+          1000
+        ],
+        "B型-army4": [
+          1,
+          2000
+        ]
+      },
+      "ammunition": {
+        "导弹X-army4": [
+          1,
+          500
+        ],
+        "炸弹Y-army4": [
+          1,
+          300
+        ]
+      }
+    },
     "策略2-3-army6": {
       "replaceable": false,
       "aircraft": {
@@ -476,6 +545,7 @@
     "策略1-army1": [
       "策略1-army2",
       "策略1-army3",
+      "策略1-army4",
       "策略1-army6",
       "策略1-army7",
       "策略1-army9"
@@ -483,6 +553,7 @@
     "策略2-army2": [
       "策略2-army1",
       "策略2-army3",
+      "策略2-army4",
       "策略2-army6",
       "策略2-army7",
       "策略2-army9"
@@ -490,6 +561,7 @@
     "策略2-3-army3": [
       "策略2-3-army1",
       "策略2-3-army2",
+      "策略2-3-army4",
       "策略2-3-army6",
       "策略2-3-army7",
       "策略2-3-army9"
@@ -497,18 +569,18 @@
   },
   "constraints": {
     "aircraft": {
-      "A型-army1": 1,
-      "B型-army1": 1,
+      "A型-army1": 4,
+      "B型-army1": 4,
       "A型-army2": 1,
       "B型-army2": 1,
       "A型-army3": 1,
       "B型-army3": 1,
       "A型-army4": 3,
-      "B型-army4": 0,
+      "B型-army4": 1,
       "A型-G-army4": 2,
       "A型-army5": 0,
       "B型-army5": 3,
-      "A型-G-1-army5": 2,
+      "A型-G-1-army5": 3,
       "A型-army6": 2,
       "B型-army6": 2,
       "A型-G-army6": 1,
@@ -524,8 +596,8 @@
       "B型-army10": 0
     },
     "ammunition": {
-      "导弹X-army1": 1,
-      "炸弹Y-army1": 1,
+      "导弹X-army1": 4,
+      "炸弹Y-army1": 4,
       "导弹X-army2": 1,
       "炸弹Y-army2": 1,
       "导弹X-army3": 1,
