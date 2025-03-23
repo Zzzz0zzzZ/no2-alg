@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.staticfiles import StaticFiles
 
 from api.models import CommonResponse, StatusCode
 from api.routes import router
@@ -53,7 +54,7 @@ app.add_middleware(
     allow_methods=["*"],  # 允许所有方法
     allow_headers=["*"],  # 允许所有请求头
 )
-
+app.mount('/static', StaticFiles(directory='static'), name="static")
 
 # 添加请求验证异常处理器
 @app.exception_handler(RequestValidationError)
