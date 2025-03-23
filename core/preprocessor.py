@@ -177,6 +177,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 new_strategy = copy.deepcopy(strategy)
                 new_strategy['aircraft'] = {}  # 清空原始资源
                 new_strategy['ammunition'] = {}  # 清空原始资源
+                army = test_case['armies'][army_init]
                 
             # 检查策略是否可以由指定的初始军队完成
             # army = armies.get(army_init, {})
