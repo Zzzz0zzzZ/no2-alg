@@ -46,6 +46,7 @@ class TestCaseDTO(BaseModel):
     actions: Dict[str, List[str]]  # 键为行动ID，值为策略ID列表
     replacement_options: Dict[str, List[str]]  # 键为可替换策略ID，值为替换策略ID列表
     armies: Dict[str, ArmyResource]  # 键为军队ID，值为军队资源
+    stage: Optional[List[str]] = []   # 需要优化的阶段(传空列表，代表优化全部，否则只优化列表中的阶段)
     time_limit: Optional[int] = None  # 算法执行时间限制
     solution_count: Optional[int] = None  # 返回几种优化方案
 

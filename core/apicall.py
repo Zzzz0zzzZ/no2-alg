@@ -30,6 +30,19 @@ def apicall(data: TestCaseDTO) -> Dict:
     Raises:
         ValueError: 当输入数据无效或不完整时抛出
     """
+    
+    # 处理需要优化的阶段信息
+    stages_to_optimize = data.stage if hasattr(data, 'stage') and data.stage else []
+    
+    # 如果指定了需要优化的阶段，则将不在列表中的阶段的策略设置为不可替换
+    if stages_to_optimize and hasattr(data, 'actions') and data.actions:
+        for action_id, strategy_ids in data.actions.items():
+            # 如果当前阶段不在需要优化的阶段列表中
+            if action_id not in stages_to_optimize:
+                # 将该阶段中的所有策略设置为不可替换
+                for strategy_id in strategy_ids:
+                    if strategy_id in data.strategies:
+                        data.strategies[strategy_id].replaceable = False
 
     # 根据策略库信息，扩充分队级策略
     filtered_data = generate_army_specific_strategies(data)
