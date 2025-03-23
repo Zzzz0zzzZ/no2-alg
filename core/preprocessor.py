@@ -159,9 +159,21 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
     # 存储新创建的策略ID映射
     new_strategy_ids = {}  # 原始ID -> [新ID列表]
 
+    # 存储过滤后的army
+    filtered_armies = {}
+
+    original_armies = test_case['armies']
+    for army_id, army in original_armies.items():
+        if(army['aircraft']=={} or army['ammunition']=={}):
+            continue
+        filtered_armies[army_id] = army
+
+    test_case['armies'] = filtered_armies
+
     # 第一步：为每个策略创建特定军队版本
     # 注意：对于不可替换的策略(replaceable=false)，只创建初始军队版本
     # 对于可替换的策略(replaceable=true)，创建所有可行的军队版本
+
     for strategy_id, strategy in test_case['strategies'].items():
         new_strategy_ids[strategy_id] = []
 
