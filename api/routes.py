@@ -27,7 +27,7 @@ async def optimize(data: TestCaseDTO):
         if len(res["solutions"]) == 0:
             return CommonResponse(
                 code=StatusCode.SUCCESS_NO_RESULT,
-                msg="无法找到满足所有资源约束的方案，已经是较优解了",
+                msg="无法找到满足所有资源/时间约束的方案，原方案已经是较优解",
                 data=res
             )
 

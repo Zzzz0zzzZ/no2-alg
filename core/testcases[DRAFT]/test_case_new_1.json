@@ -1,7 +1,7 @@
 {
   "strategies": {
     "策略1": {
-      "replaceable": true,
+      "replaceable": false,
       "army_init": "军队1",
       "aircraft": {
         "A型": [1, 1000],
@@ -10,7 +10,8 @@
       "ammunition": {
         "导弹X": [1, 500],
         "炸弹Y": [1, 300]
-      }
+      },
+      "time_range": [0, 90]
     },
     "策略2": {
       "replaceable": true,
@@ -22,7 +23,8 @@
       "ammunition": {
         "导弹X": [1, 500],
         "炸弹Y": [1, 300]
-      }
+      },
+      "time_range": [90, 120]
     },
     "策略1的替换策略-1": {
       "replaceable": false,

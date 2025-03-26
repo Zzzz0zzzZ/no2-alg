@@ -173,14 +173,15 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
     # 第一步：为每个策略创建特定军队版本
     # 注意：对于不可替换的策略(replaceable=false)，只创建初始军队版本
     # 对于可替换的策略(replaceable=true)，创建所有可行的军队版本
-
+    
     for strategy_id, strategy in test_case['strategies'].items():
         new_strategy_ids[strategy_id] = []
-
+    
         # 获取策略的初始军队信息
         # army_init = strategy.get('army_init', 'army1')
         is_replaceable = strategy.get('replaceable', False)  # 默认不可替换
-
+        time_range = strategy.get('time_range', None)  # 获取时间范围
+    
         if not is_replaceable:
             if strategy_id in non_replaceable_strategies:
                 continue
@@ -191,14 +192,6 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 new_strategy['ammunition'] = {}  # 清空原始资源
                 army = test_case['armies'][army_init]
                 
-            # 检查策略是否可以由指定的初始军队完成
-            # army = armies.get(army_init, {})
-
-            # # 创建修改后的策略副本
-            # new_strategy = copy.deepcopy(strategy)
-            # new_strategy['aircraft'] = {}  # 清空原始资源
-            # new_strategy['ammunition'] = {}  # 清空原始资源
-            #
                 if check_strategy_feasible_for_army(strategy, army, new_strategy, army_init):
                     # 创建带有军队ID的新策略ID
                     new_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{army_init}"
@@ -207,86 +200,90 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                     # 移除army_init字段，因为它已经在ID中体现
                     if 'army_init' in new_strategy:
                         del new_strategy['army_init']
-                
+                    
+                    # 保留时间范围
+                    if time_range:
+                        new_strategy['time_range'] = time_range
+                    
                     # 添加到新测试用例中
                     new_test_case['strategies'][new_strategy_id] = new_strategy
             else:
                 for other_army_id, other_army in armies.items():
-                    # 如果是初始军队且已经处理过，则跳过
-                    # if other_army_id == army_init:
-                #     continue
-
-                # 创建修改后的策略副本
+                    # 创建修改后的策略副本
                     other_new_strategy = copy.deepcopy(strategy)
                     other_new_strategy['aircraft'] = {}  # 清空原始资源
                     other_new_strategy['ammunition'] = {}  # 清空原始资源
-
+    
                     # 检查策略是否可以由该军队完成
                     if check_strategy_feasible_for_army(strategy, other_army, other_new_strategy, other_army_id):
                         # 创建带有军队ID的新策略ID
                         new_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{other_army_id}"
                         new_strategy_ids[strategy_id].append(new_strategy_id)
-
-                        # # 移除army_init字段，因为它已经在ID中体现
-                        # if 'army_init' in other_new_strategy:
-                        #     del other_new_strategy['army_init']
-
+    
                         # 非初始军队版本不可替换
                         other_new_strategy['replaceable'] = False
-
+                        
+                        # 保留时间范围
+                        if time_range:
+                            other_new_strategy['time_range'] = time_range
+    
                         # 添加到新测试用例中
                         new_test_case['strategies'][new_strategy_id] = other_new_strategy
-
+    
         # 对于可替换的策略，创建所有可行的军队版本
         else:
             # 首先，创建初始军队版本
             army_init = strategy.get('army_init', 'army1')
             army = armies.get(army_init, {})
-
+    
             # 创建修改后的策略副本
             new_strategy = copy.deepcopy(strategy)
             new_strategy['aircraft'] = {}  # 清空原始资源
             new_strategy['ammunition'] = {}  # 清空原始资源
-
+    
             if check_strategy_feasible_for_army(strategy, army, new_strategy, army_init):
                 # 创建带有军队ID的新策略ID
                 new_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{army_init}"
                 new_strategy_ids[strategy_id].append(new_strategy_id)
-
+    
                 # 移除army_init字段，因为它已经在ID中体现
                 if 'army_init' in new_strategy:
                     del new_strategy['army_init']
-
+    
                 # 初始军队版本仍然是可替换的
                 new_strategy['replaceable'] = True
-
+                
+                # 保留时间范围
+                if time_range:
+                    new_strategy['time_range'] = time_range
+    
                 # 添加到新测试用例中
                 new_test_case['strategies'][new_strategy_id] = new_strategy
-
+    
             # 然后，创建其他军队版本
             for other_army_id, other_army in armies.items():
                 # 如果是初始军队且已经处理过，则跳过
                 if other_army_id == army_init:
                     continue
-
+    
                 # 创建修改后的策略副本
                 other_new_strategy = copy.deepcopy(strategy)
                 other_new_strategy['aircraft'] = {}  # 清空原始资源
                 other_new_strategy['ammunition'] = {}  # 清空原始资源
-
+    
                 # 检查策略是否可以由该军队完成
                 if check_strategy_feasible_for_army(strategy, other_army, other_new_strategy, other_army_id):
                     # 创建带有军队ID的新策略ID
                     new_strategy_id = f"{strategy_id}{ALG_SEPARATOR}{other_army_id}"
                     new_strategy_ids[strategy_id].append(new_strategy_id)
-
+    
                     # 移除army_init字段，因为它已经在ID中体现
                     if 'army_init' in other_new_strategy:
                         del other_new_strategy['army_init']
-
+    
                     # 非初始军队版本不可替换
                     other_new_strategy['replaceable'] = False
-
+    
                     # 添加到新测试用例中
                     new_test_case['strategies'][new_strategy_id] = other_new_strategy
 
@@ -316,26 +313,36 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
             strategy = test_case['strategies'][original_strategy_id]
             if (strategy.get('replaceable', True)):
                 army_init = strategy.get('army_init', 'army1')
-
+    
+                # 获取原策略的时间范围
+                original_time_range = strategy.get('time_range', None)
+    
                 # 创建原策略的初始军队版本ID
                 init_strategy_id = f"{original_strategy_id}{ALG_SEPARATOR}{army_init}"
-
+    
                 # 确保这个策略的军队特定版本存在，且该策略是可替换的
-                if init_strategy_id in new_test_case['strategies'] and new_test_case['strategies'][
-                    init_strategy_id].get('replaceable', False):
+                if init_strategy_id in new_test_case['strategies'] and new_test_case['strategies'][init_strategy_id].get('replaceable', False):
                     # 创建替换选项数组
                     new_test_case['replacement_options'][init_strategy_id] = []
-
+                    
                     # 添加所有可行的替换策略（带有军队信息）
                     for replacement_id in replacement_ids:
                         if replacement_id in new_strategy_ids:
                             # 找到所有可行的军队特定版本
                             replacement_versions = new_strategy_ids[replacement_id]
-
+                            
                             # 获取替换策略本身的信息
                             replacement_strategy = test_case['strategies'][replacement_id]
+                            replacement_time_range = replacement_strategy.get('time_range', None)
+                            
                             # 添加替换策略的所有其他可行军队版本
                             for version_id in replacement_versions:
+                                # 确保替换策略的军队特定版本继承时间范围
+                                if version_id in new_test_case['strategies']:
+                                    # 如果替换策略没有自己的时间范围，则使用原策略的时间范围
+                                    if not replacement_time_range and original_time_range:
+                                        new_test_case['strategies'][version_id]['time_range'] = original_time_range
+                            
                                 new_test_case['replacement_options'][init_strategy_id].append(version_id)
 
                             # 递归添加替换策略的替换选项（如果存在）

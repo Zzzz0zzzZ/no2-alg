@@ -1,0 +1,73 @@
+{
+  "strategies": {
+    "策略1": {
+      "replaceable": true,
+      "army_init": "军队1",
+      "aircraft": {
+        "A型": [1, 1000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "time_range": [0, 90]
+    },
+    "策略2": {
+      "replaceable": true,
+      "army_init": "军队1",
+      "aircraft": {
+        "A型": [1, 1000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "time_range": [45, 135]
+    },
+    "策略2-替1": {
+      "replaceable": false,
+      "aircraft": {
+        "A型-1": [1, 100]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      }
+    },
+    "策略2-替2": {
+      "replaceable": false,
+      "aircraft": {
+        "A型-2": [2, 499]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      }
+    }
+  },
+  "actions": {
+    "行动1": ["策略1", "策略2"]
+  },
+  "replacement_options": {
+    "策略2": ["策略2-替1", "策略2-替2"]
+  },
+  "stage": ["行动1"],
+  "armies": { 
+    "军队1":{
+      "aircraft":{
+        "A型":{
+          "数量":1
+        },
+        "A型-1":{
+          "数量":0
+        },
+        "A型-2":{
+          "数量":2
+        }
+      },
+      "ammunition":{
+        "导弹X":{
+          "数量":2
+        }
+      }
+    }
+    },
+  "time_limit": 10,
+  "solution_count": 3
+}

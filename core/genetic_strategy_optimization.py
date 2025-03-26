@@ -13,7 +13,7 @@ mpl.rcParams["font.sans-serif"] = ["SimHei"]
 
 
 class Strategy:
-    def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0):
+    def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0, time_range=None):
         """
         初始化策略对象
         
@@ -23,11 +23,13 @@ class Strategy:
         aircraft: 字典，键为载机种类，值为(数量, 单价)元组
         ammunition: 字典，键为弹药种类，值为(数量, 单价)元组
         price: 策略总价格
+        time_range: 策略的时间范围 [开始时间, 结束时间]
         """
         self.id = id
         self.replaceable = replaceable
         self.aircraft = aircraft if aircraft else {}
         self.ammunition = ammunition if ammunition else {}
+        self.time_range = time_range
 
         # 如果没有提供价格，则根据载机和弹药计算总价格
         if price == 0:
@@ -122,8 +124,8 @@ class ActionList:
         total_prices: 对应的总价格列表
         """
         # 检查初始方案是否满足资源约束
-        initial_aircraft_usage = {}
-        initial_ammunition_usage = {}
+        initial_ammunition_usage = {}  # 弹药总使用量
+        time_based_aircraft_usage = {}  # 基于时间段的飞机使用量
         initial_price = 0
 
         for action in self.actions:
@@ -131,21 +133,33 @@ class ActionList:
                 aircraft_usage, ammunition_usage = strategy.get_resource_usage()
                 initial_price += strategy.price
 
-                for aircraft_type, count in aircraft_usage.items():
-                    initial_aircraft_usage[aircraft_type] = initial_aircraft_usage.get(aircraft_type, 0) + count
-
+                # 累加弹药总使用量
                 for ammo_type, count in ammunition_usage.items():
                     initial_ammunition_usage[ammo_type] = initial_ammunition_usage.get(ammo_type, 0) + count
+
+                # 记录时间段的飞机使用情况
+                time_range = strategy.time_range
+                if time_range:
+                    start_time, end_time = time_range
+                    for t in range(start_time, end_time):
+                        if t not in time_based_aircraft_usage:
+                            time_based_aircraft_usage[t] = {}
+                        
+                        for aircraft_type, count in aircraft_usage.items():
+                            time_based_aircraft_usage[t][aircraft_type] = time_based_aircraft_usage[t].get(aircraft_type, 0) + count
 
         # 检查初始方案是否超出资源约束
         resource_exceeded = False
         exceeded_resources = []
 
-        for aircraft_type, count in initial_aircraft_usage.items():
-            if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
-                resource_exceeded = True
-                exceeded_resources.append(f"载机 {aircraft_type}: {count}/{aircraft_constraints[aircraft_type]}")
+        # 检查时间段的飞机约束
+        for t, t_aircraft_usage in time_based_aircraft_usage.items():
+            for aircraft_type, count in t_aircraft_usage.items():
+                if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
+                    resource_exceeded = True
+                    exceeded_resources.append(f"时间点 {t} 的载机 {aircraft_type}: {count}/{aircraft_constraints[aircraft_type]}")
 
+        # 检查弹药总量约束
         for ammo_type, count in initial_ammunition_usage.items():
             if ammo_type in ammunition_constraints and count > ammunition_constraints[ammo_type]:
                 resource_exceeded = True
@@ -523,26 +537,36 @@ class ActionList:
 
     def _evaluate_fitness(self, individual, replaceable_strategies, aircraft_constraints, ammunition_constraints):
         """
-        评估个体的适应度
+        评估个体的适应度，计算在给定约束条件下的总价格和可行性
         
         参数:
-        individual: 个体（染色体）
-        replaceable_strategies: 可替换策略ID列表
-        aircraft_constraints: 载机约束
-        ammunition_constraints: 弹药约束
+        individual: list, 个体（染色体），表示每个可替换策略的替换选项索引
+        replaceable_strategies: list, 可替换策略ID列表
+        aircraft_constraints: dict, 载机约束，键为载机类型，值为最大可用数量（基于时间段约束）
+        ammunition_constraints: dict, 弹药约束，键为弹药类型，值为最大可用数量（基于总量约束）
         
         返回:
-        fitness: 适应度分数
-        price: 总价格
-        valid: 是否满足约束
+        tuple: (fitness, total_price, valid)
+            - fitness: float, 适应度分数，有效解为价格的负值，无效解为惩罚值
+            - total_price: float, 方案总价格
+            - valid: bool, 是否满足所有约束条件
+        
+        说明:
+        1. 载机约束基于时间段检查，同一架飞机可以在不同时间段重复使用
+        2. 弹药约束基于总量检查，因为弹药使用后就消耗了，不能重复使用
+        3. 适应度计算规则：
+           - 有效解：fitness = -total_price（价格越低适应度越高）
+           - 无效解：fitness = -1000000 - constraint_violation * 10000（违反约束越多适应度越低）
         """
         # 解码个体，获取替换方案
         combination = self._decode_individual(individual, replaceable_strategies)
 
         # 计算资源使用情况和总价格
-        aircraft_usage = {}
-        ammunition_usage = {}
+        total_ammunition_usage = {}  # 用于记录弹药总使用量
         total_price = 0
+        
+        # 创建时间段资源使用字典（仅用于飞机）
+        time_based_aircraft_usage = {}
 
         for action in self.actions:
             for strategy in action.strategies:
@@ -555,31 +579,45 @@ class ActionList:
                 # 累加价格
                 total_price += strategy_to_use.price
 
-                # 累加资源使用
+                # 获取策略的时间范围和资源使用情况
+                time_range = strategy_to_use.time_range
                 aircraft_usage_part, ammunition_usage_part = strategy_to_use.get_resource_usage()
-                for aircraft_type, count in aircraft_usage_part.items():
-                    aircraft_usage[aircraft_type] = aircraft_usage.get(aircraft_type, 0) + count
-
+                
+                # 累加弹药总使用量（因为弹药不可重复使用）
                 for ammo_type, count in ammunition_usage_part.items():
-                    ammunition_usage[ammo_type] = ammunition_usage.get(ammo_type, 0) + count
+                    total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
+                
+                # 记录时间段的飞机使用情况
+                if time_range:
+                    start_time, end_time = time_range
+                    # 修改为左闭右开区间，避免边界重叠问题
+                    for t in range(start_time, end_time):
+                        if t not in time_based_aircraft_usage:
+                            time_based_aircraft_usage[t] = {}
+                            
+                        # 累加该时间点的飞机使用
+                        for aircraft_type, count in aircraft_usage_part.items():
+                            current_count = time_based_aircraft_usage[t].get(aircraft_type, 0)
+                            time_based_aircraft_usage[t][aircraft_type] = current_count + count
 
         # 检查是否满足约束
         valid = True
         constraint_violation = 0
 
-        for aircraft_type, count in aircraft_usage.items():
-            if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
-                valid = False
-                constraint_violation += count - aircraft_constraints[aircraft_type]
-
-        for ammo_type, count in ammunition_usage.items():
+        # 检查时间段的飞机约束
+        for t, t_aircraft_usage in time_based_aircraft_usage.items():
+            for aircraft_type, count in t_aircraft_usage.items():
+                if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
+                    valid = False
+                    constraint_violation += count - aircraft_constraints[aircraft_type]
+                    
+        # 检查弹药总量约束
+        for ammo_type, count in total_ammunition_usage.items():
             if ammo_type in ammunition_constraints and count > ammunition_constraints[ammo_type]:
                 valid = False
                 constraint_violation += count - ammunition_constraints[ammo_type]
 
         # 计算适应度
-        # 如果方案有效，适应度为价格的负值（价格越低适应度越高）
-        # 如果方案无效，适应度为一个很大的负值减去约束违反程度
         if valid:
             fitness = -total_price
         else:

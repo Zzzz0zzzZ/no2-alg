@@ -31,6 +31,15 @@ def apicall(data: TestCaseDTO) -> Dict:
         ValueError: 当输入数据无效或不完整时抛出
     """
     
+    # 校验原始草案中的行动，必须有time_range字段
+    for action_id, strategy_ids in data.actions.items():
+        for strategy_id in strategy_ids:
+            if strategy_id in data.strategies and data.strategies[strategy_id].time_range is None:
+                raise ValueError(f"策略 {strategy_id} 缺少 time_range 字段")
+            time_range = data.strategies[strategy_id].time_range
+            if len(time_range) != 2 or time_range[0] >= time_range[1]:
+                raise ValueError(f"策略 {strategy_id} 的 time_range 字段格式不正确：{time_range}")
+
     # 处理需要优化的阶段信息
     stages_to_optimize = data.stage if hasattr(data, 'stage') and data.stage else []
     
@@ -98,7 +107,8 @@ def apicall(data: TestCaseDTO) -> Dict:
             ammunition={
                 ammo_type: (count_price[0], count_price[1])
                 for ammo_type, count_price in strategy_data.ammunition.items()
-            }
+            },
+            time_range=strategy_data.time_range if hasattr(strategy_data, 'time_range') else None
         )
 
     # 创建ActionList对象
@@ -302,12 +312,14 @@ def apicall(data: TestCaseDTO) -> Dict:
                         "from_strategy_details": {  # 添加原策略的详细信息（移除分隔符和军队信息）
                             "aircraft": from_aircraft,
                             "ammunition": from_ammunition,
-                            "price": strategy.price
+                            "price": strategy.price,
+                            "time_range": strategy.time_range  # 添加时间范围
                         },
                         "to_strategy_details": {  # 添加替换策略的详细信息（移除分隔符和军队信息）
                             "aircraft": to_aircraft,
                             "ammunition": to_ammunition,
-                            "price": replacement.price
+                            "price": replacement.price,
+                            "time_range": replacement.time_range  # 添加时间范围
                         },
                         "price_difference": price_diff,
                         "is_saving": replacement.price < strategy.price,
