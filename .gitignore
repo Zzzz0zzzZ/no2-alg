@@ -1,5 +1,6 @@
 .idea
 api.log
 core/output
-core/testcases
-core/testcases[DRAFT]
+**/__pycache__
+**/.idea
+**/.DS_Store
