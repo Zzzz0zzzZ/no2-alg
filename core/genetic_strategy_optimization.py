@@ -1,6 +1,7 @@
 # 基于遗传算法的策略优化实现
 import glob
 import json
+import math
 import os
 import random
 import time
@@ -13,7 +14,7 @@ mpl.rcParams["font.sans-serif"] = ["SimHei"]
 
 
 class Strategy:
-    def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0, time_range=None):
+    def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0, time_range=None, penetration_rate=0.8):
         """
         初始化策略对象
         
@@ -24,14 +25,16 @@ class Strategy:
         ammunition: 字典，键为弹药种类，值为(数量, 单价)元组
         price: 策略总价格
         time_range: 策略的时间范围 [开始时间, 结束时间]
+        penetration_rate: 突防率，0.0~1.0之间，默认0.8
         """
         self.id = id
         self.replaceable = replaceable
         self.aircraft = aircraft if aircraft else {}
         self.ammunition = ammunition if ammunition else {}
         self.time_range = time_range
+        self.penetration_rate = penetration_rate
 
-        # 如果没有提供价格，则根据载机和弹药计算总价格
+        # 如果没有提供价格，则根据载机损耗和弹药计算总价格
         if price == 0:
             self.price = self.calculate_price()
         else:
@@ -39,11 +42,21 @@ class Strategy:
 
     def calculate_price(self):
         """
-        计算策略的总价格
+        计算策略的总价格：飞机损耗价格 + 弹药价格
+        飞机损耗价格 = 飞机数量 * (1-突防率) * 单价，向上取整
+        弹药价格 = 弹药数量 * 单价
         """
-        aircraft_price = sum(count * price for count, price in self.aircraft.values())
+        # 计算飞机损耗价格
+        aircraft_loss_price = 0
+        for aircraft_type, (count, price) in self.aircraft.items():
+            # 计算损耗数量，向上取整
+            loss_count = math.ceil(count * (1 - self.penetration_rate))
+            aircraft_loss_price += loss_count * price
+        
+        # 计算弹药价格
         ammunition_price = sum(count * price for count, price in self.ammunition.values())
-        return aircraft_price + ammunition_price
+        
+        return aircraft_loss_price + ammunition_price
 
     def get_resource_usage(self):
         """
@@ -56,6 +69,25 @@ class Strategy:
         aircraft_usage = {k: v[0] for k, v in self.aircraft.items()}
         ammunition_usage = {k: v[0] for k, v in self.ammunition.items()}
         return aircraft_usage, ammunition_usage
+    
+    def get_aircraft_loss(self):
+        """
+        获取策略执行时的飞机损耗情况
+        
+        返回:
+        aircraft_loss: 字典，键为载机种类，值为损耗数量（向上取整）
+        total_loss: 总损耗数量
+        """
+        aircraft_loss = {}
+        total_loss = 0
+        
+        for aircraft_type, (count, _) in self.aircraft.items():
+            # 计算损耗数量，向上取整
+            loss_count = math.ceil(count * (1 - self.penetration_rate))
+            aircraft_loss[aircraft_type] = loss_count
+            total_loss += loss_count
+            
+        return aircraft_loss, total_loss
 
     def __str__(self):
         return f"Strategy {self.id} (价格: {self.price}, 可替换: {self.replaceable})"
@@ -560,70 +592,78 @@ class ActionList:
         """
         # 解码个体，获取替换方案
         combination = self._decode_individual(individual, replaceable_strategies)
-
-        # 计算资源使用情况和总价格
-        total_ammunition_usage = {}  # 用于记录弹药总使用量
-        total_price = 0
         
-        # 创建时间段资源使用字典（仅用于飞机）
-        time_based_aircraft_usage = {}
-
-        for action in self.actions:
+        # 计算总价格和资源使用情况
+        total_price = 0
+        total_ammunition_usage = {}  # 弹药总使用量
+        time_based_aircraft_usage = {}  # 基于时间段的飞机使用量
+        time_based_aircraft_loss = {}  # 基于时间段的飞机损耗量
+        available_aircraft = {k: v for k, v in aircraft_constraints.items()}  # 可用飞机数量，初始为约束值
+        
+        # 按时间顺序排序行动
+        sorted_actions = sorted(self.actions, key=lambda a: min([s.time_range[0] if s.time_range else 0 for s in a.strategies]) if a.strategies else 0)
+        
+        for action in sorted_actions:
             for strategy in action.strategies:
-                # 如果策略被替换，使用替换后的策略
+                # 如果策略可替换且在替换方案中，使用替换后的策略
                 if strategy.replaceable and strategy.id in combination:
-                    strategy_to_use = combination[strategy.id]
-                else:
-                    strategy_to_use = strategy
-
-                # 累加价格
-                total_price += strategy_to_use.price
-
-                # 获取策略的时间范围和资源使用情况
-                time_range = strategy_to_use.time_range
-                aircraft_usage_part, ammunition_usage_part = strategy_to_use.get_resource_usage()
+                    strategy = combination[strategy.id]
                 
-                # 累加弹药总使用量（因为弹药不可重复使用）
-                for ammo_type, count in ammunition_usage_part.items():
+                # 累加总价格
+                total_price += strategy.price
+                
+                # 获取策略的资源使用情况
+                aircraft_usage, ammunition_usage = strategy.get_resource_usage()
+                
+                # 获取策略的飞机损耗情况
+                aircraft_loss, _ = strategy.get_aircraft_loss()
+                
+                # 累加弹药使用量
+                for ammo_type, count in ammunition_usage.items():
                     total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
                 
-                # 记录时间段的飞机使用情况
+                # 记录时间段的飞机使用和损耗情况
+                time_range = strategy.time_range
                 if time_range:
                     start_time, end_time = time_range
-                    # 修改为左闭右开区间，避免边界重叠问题
                     for t in range(start_time, end_time):
                         if t not in time_based_aircraft_usage:
                             time_based_aircraft_usage[t] = {}
+                            time_based_aircraft_loss[t] = {}
+                        
+                        # 检查该时间点是否有足够的飞机可用
+                        for aircraft_type, count in aircraft_usage.items():
+                            # 检查可用数量
+                            if aircraft_type in available_aircraft and available_aircraft[aircraft_type] < count:
+                                return float('-inf'), float('inf'), False  # 资源不足，无效解
                             
-                        # 累加该时间点的飞机使用
-                        for aircraft_type, count in aircraft_usage_part.items():
-                            current_count = time_based_aircraft_usage[t].get(aircraft_type, 0)
-                            time_based_aircraft_usage[t][aircraft_type] = current_count + count
-
-        # 检查是否满足约束
+                            # 记录使用量
+                            time_based_aircraft_usage[t][aircraft_type] = time_based_aircraft_usage[t].get(aircraft_type, 0) + count
+                        
+                        # 记录损耗量并更新可用飞机数量
+                        for aircraft_type, loss_count in aircraft_loss.items():
+                            time_based_aircraft_loss[t][aircraft_type] = time_based_aircraft_loss[t].get(aircraft_type, 0) + loss_count
+                            
+                            # 更新可用飞机数量（在时间段结束后）
+                            if t == end_time - 1:  # 最后一个时间点
+                                available_aircraft[aircraft_type] -= loss_count
+                                if available_aircraft[aircraft_type] < 0:
+                                    return float('-inf'), float('inf'), False  # 资源不足，无效解
+        
+        # 检查资源约束
         valid = True
-        constraint_violation = 0
-
-        # 检查时间段的飞机约束
-        for t, t_aircraft_usage in time_based_aircraft_usage.items():
-            for aircraft_type, count in t_aircraft_usage.items():
-                if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
-                    valid = False
-                    constraint_violation += count - aircraft_constraints[aircraft_type]
-                    
+        
         # 检查弹药总量约束
         for ammo_type, count in total_ammunition_usage.items():
             if ammo_type in ammunition_constraints and count > ammunition_constraints[ammo_type]:
                 valid = False
-                constraint_violation += count - ammunition_constraints[ammo_type]
-
-        # 计算适应度
+                break
+        
+        # 如果有效，返回适应度（负的价格，价格越低适应度越高）
         if valid:
-            fitness = -total_price
+            return -total_price, total_price, True
         else:
-            fitness = -1000000 - constraint_violation * 10000
-
-        return fitness, total_price, valid
+            return float('-inf'), float('inf'), False
 
     def _selection(self, fitness_scores):
         """

@@ -1,0 +1,117 @@
+{
+  "strategies": {
+    "策略1": {
+      "replaceable": true,
+      "army_init": "军队1",
+      "aircraft": {
+        "C型": [10, 2000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "time_range": [0, 90],
+      "penetration_rate": 0.8
+    },
+    "策略2": {
+      "replaceable": true,
+      "army_init": "军队1",
+      "aircraft": {
+        "C型": [8, 2000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "time_range": [90, 180],
+      "penetration_rate": 0.8
+    },
+    "策略1-替1": {
+      "replaceable": false,
+      "aircraft": {
+        "B型": [5, 1500]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.9
+    },
+    "策略1-替2": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [3, 1000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.5
+    },
+    "策略2-替1": {
+      "replaceable": false,
+      "aircraft": {
+        "B型": [4, 1500]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.9
+    },
+    "策略2-替2": {
+      "replaceable": false,
+      "aircraft": {
+        "A型": [1, 1000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.5
+    }
+  },
+  "actions": {
+    "行动1": ["策略1"],
+    "行动2": ["策略2"]
+  },
+  "replacement_options": {
+    "策略1": ["策略1-替1", "策略1-替2"],
+    "策略2": ["策略2-替1", "策略2-替2"]
+  },
+  "stage": ["行动1", "行动2"],
+  "armies": { 
+    "军队1":{
+      "aircraft":{
+        "A型":{
+          "数量":3
+        },
+        "B型":{
+          "数量":5
+        },
+        "C型":{
+          "数量":10
+        }
+      },
+      "ammunition":{
+        "导弹X":{
+          "数量":12
+        }
+      }
+    },
+    "军队2":{
+      "aircraft":{
+        "A型":{
+          "数量":3
+        },
+        "B型":{
+          "数量":0
+        },
+        "C型":{
+          "数量":0
+        }
+      },
+      "ammunition":{
+        "导弹X":{
+          "数量":12
+        }
+      }
+    }
+    },
+  "time_limit": 60,
+  "solution_count": 3
+}

@@ -204,6 +204,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                     # 保留时间范围
                     if time_range:
                         new_strategy['time_range'] = time_range
+
+                    # 透传 penetration_rate 字段 --- 突防率
+                    if 'penetration_rate' in strategy:
+                        new_strategy['penetration_rate'] = strategy['penetration_rate']
                     
                     # 添加到新测试用例中
                     new_test_case['strategies'][new_strategy_id] = new_strategy
@@ -226,6 +230,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                         # 保留时间范围
                         if time_range:
                             other_new_strategy['time_range'] = time_range
+                        
+                        # 透传 penetration_rate 字段 --- 突防率
+                        if 'penetration_rate' in strategy:
+                            other_new_strategy['penetration_rate'] = strategy['penetration_rate']
     
                         # 添加到新测试用例中
                         new_test_case['strategies'][new_strategy_id] = other_new_strategy
@@ -256,6 +264,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 # 保留时间范围
                 if time_range:
                     new_strategy['time_range'] = time_range
+                
+                # 透传 penetration_rate 字段 --- 突防率
+                if 'penetration_rate' in strategy:
+                    new_strategy['penetration_rate'] = strategy['penetration_rate']
     
                 # 添加到新测试用例中
                 new_test_case['strategies'][new_strategy_id] = new_strategy

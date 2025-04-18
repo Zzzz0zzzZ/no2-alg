@@ -30,7 +30,7 @@ def apicall(data: TestCaseDTO) -> Dict:
     Raises:
         ValueError: 当输入数据无效或不完整时抛出
     """
-    
+
     # 校验原始草案中的行动，必须有time_range字段
     for action_id, strategy_ids in data.actions.items():
         for strategy_id in strategy_ids:
@@ -42,7 +42,7 @@ def apicall(data: TestCaseDTO) -> Dict:
 
     # 处理需要优化的阶段信息
     stages_to_optimize = data.stage if hasattr(data, 'stage') and data.stage else []
-    
+
     # 如果指定了需要优化的阶段，则将不在列表中的阶段的策略设置为不可替换
     if stages_to_optimize and hasattr(data, 'actions') and data.actions:
         for action_id, strategy_ids in data.actions.items():
@@ -97,6 +97,7 @@ def apicall(data: TestCaseDTO) -> Dict:
     # 创建任务字典，将DTO中的任务数据转换为Strategy对象
     strategy_objects = {}
     for strategy_id, strategy_data in data.strategies.items():
+        # 在创建 Strategy 对象时添加 penetration_rate 字段
         strategy_objects[strategy_id] = Strategy(
             id=strategy_id,
             replaceable=strategy_data.replaceable,
@@ -108,7 +109,8 @@ def apicall(data: TestCaseDTO) -> Dict:
                 ammo_type: (count_price[0], count_price[1])
                 for ammo_type, count_price in strategy_data.ammunition.items()
             },
-            time_range=strategy_data.time_range if hasattr(strategy_data, 'time_range') else None
+            time_range=strategy_data.time_range if hasattr(strategy_data, 'time_range') else None,
+            penetration_rate=strategy_data.penetration_rate if hasattr(strategy_data, 'penetration_rate') else 0.8
         )
 
     # 创建ActionList对象
@@ -197,8 +199,9 @@ def apicall(data: TestCaseDTO) -> Dict:
                     resource_id = aircraft_type.split(ALG_SEPARATOR)[0]  # 提取资源基本ID
                     solution["resource_usage"][army_id]["aircraft"][resource_id] = {
                         "total": total,
-                        "used": 0,
-                        "remaining": total
+                        "used": 0,     # 出动的数量
+                        "loss": 0,     # 损毁的数量
+                        "remaining": total  # 剩余的数量（总的-损毁的）
                     }
 
             # 初始化该军队的弹药资源
@@ -220,6 +223,9 @@ def apicall(data: TestCaseDTO) -> Dict:
 
                 # 获取任务的资源使用情况
                 aircraft_usage, ammunition_usage = strategy.get_resource_usage()
+                
+                # 获取任务的飞机损耗情况
+                aircraft_loss, _ = strategy.get_aircraft_loss()
 
                 # 累计飞机使用情况
                 for aircraft_type, count in aircraft_usage.items():
@@ -231,10 +237,17 @@ def apicall(data: TestCaseDTO) -> Dict:
                         # 确保该军队和资源存在
                         if resource_army_id in solution["resource_usage"] and \
                                 resource_id in solution["resource_usage"][resource_army_id]["aircraft"]:
+                            # 更新出动数量
                             solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["used"] += count
+                            
+                            # 计算并更新损毁数量
+                            loss_count = aircraft_loss.get(aircraft_type, 0)
+                            solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["loss"] += loss_count
+                            
+                            # 更新剩余数量（总的-损毁的）
                             solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["remaining"] = \
                                 solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["total"] - \
-                                solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["used"]
+                                solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["loss"]
 
                 # 累计弹药使用情况
                 for ammo_type, count in ammunition_usage.items():
@@ -256,6 +269,22 @@ def apicall(data: TestCaseDTO) -> Dict:
             for strategy in action.strategies:
                 if strategy.replaceable and strategy.id in combination:
                     replacement = combination[strategy.id]
+
+                    # 计算原策略的飞机损耗
+                    raw_from_aircraft_loss, from_total_loss = strategy.get_aircraft_loss()
+                    # 处理原策略的飞机损耗信息，移除分隔符和军队信息
+                    from_aircraft_loss = {}
+                    for aircraft_type, loss_count in raw_from_aircraft_loss.items():
+                        resource_id = aircraft_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in aircraft_type else aircraft_type
+                        from_aircraft_loss[resource_id] = loss_count
+                    
+                    # 计算替换策略的飞机损耗
+                    raw_to_aircraft_loss, to_total_loss = replacement.get_aircraft_loss()
+                    # 处理替换策略的飞机损耗信息，移除分隔符和军队信息
+                    to_aircraft_loss = {}
+                    for aircraft_type, loss_count in raw_to_aircraft_loss.items():
+                        resource_id = aircraft_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in aircraft_type else aircraft_type
+                        to_aircraft_loss[resource_id] = loss_count
 
                     # 分割策略ID和军队ID
                     from_parts = strategy.id.split(ALG_SEPARATOR) if ALG_SEPARATOR in strategy.id else [strategy.id,
@@ -313,13 +342,19 @@ def apicall(data: TestCaseDTO) -> Dict:
                             "aircraft": from_aircraft,
                             "ammunition": from_ammunition,
                             "price": strategy.price,
-                            "time_range": strategy.time_range  # 添加时间范围
+                            "time_range": strategy.time_range,
+                            "aircraft_loss": from_aircraft_loss,  # 添加飞机损耗信息
+                            "total_aircraft_loss": from_total_loss,  # 添加总飞机损耗
+                            "penetration_rate": strategy.penetration_rate   # 突防率(回传)
                         },
                         "to_strategy_details": {  # 添加替换策略的详细信息（移除分隔符和军队信息）
                             "aircraft": to_aircraft,
                             "ammunition": to_ammunition,
                             "price": replacement.price,
-                            "time_range": replacement.time_range  # 添加时间范围
+                            "time_range": replacement.time_range,
+                            "aircraft_loss": to_aircraft_loss,  # 添加飞机损耗信息
+                            "total_aircraft_loss": to_total_loss,  # 添加总飞机损耗
+                            "penetration_rate": strategy.penetration_rate  # 突防率(回传)
                         },
                         "price_difference": price_diff,
                         "is_saving": replacement.price < strategy.price,
