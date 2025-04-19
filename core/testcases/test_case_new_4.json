@@ -1,0 +1,78 @@
+{
+  "opt_type": 0,
+  "strategies": {
+    "策略0": {
+      "replaceable": true,
+      "army_init": "军队1",
+      "aircraft": {
+        "C-t2型": [10, 2000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "time_range": [0, 60],
+      "penetration_rate": 0.8
+    },
+    "策略1": {
+      "replaceable": true,
+      "army_init": "军队1",
+      "aircraft": {
+        "C型": [10, 2000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "time_range": [60, 90],
+      "penetration_rate": 0.8
+    },
+    "策略1-t1": {
+      "replaceable": false,
+      "aircraft": {
+        "C-t1型": [100, 20]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.1
+    },
+    "策略1-t2": {
+      "replaceable": false,
+      "aircraft": {
+        "C-t2型": [10, 1000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.9
+    }
+  },
+  "actions": {
+    "行动1": ["策略0", "策略1"]
+  },
+  "replacement_options": {
+    "策略1": ["策略1-t1", "策略1-t2"]
+  },
+  "stage": ["行动1"],
+  "armies": { 
+    "军队1":{
+      "aircraft":{
+        "C型":{
+          "数量":10
+        },
+        "C-t1型":{
+          "数量":100
+        },
+        "C-t2型":{
+          "数量":10
+        }
+      },
+      "ammunition":{
+        "导弹X":{
+          "数量":12
+        }
+      }
+    }
+    },
+  "time_limit": 60,
+  "solution_count": 3
+}

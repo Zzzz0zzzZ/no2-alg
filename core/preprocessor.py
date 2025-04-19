@@ -122,7 +122,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
     }
 
     # 保留其他可能存在的字段，如time_limit和solution_count
-    for field in ['time_limit', 'solution_count']:
+    for field in ['time_limit', 'solution_count', 'opt_type']:
         if field in test_case:
             new_test_case[field] = test_case[field]
 

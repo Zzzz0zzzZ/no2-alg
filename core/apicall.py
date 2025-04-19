@@ -3,7 +3,7 @@ import time
 from enum import IntEnum
 from typing import Dict
 
-from api.models import OptimizeDTO, TestCaseDTO, Constraints
+from api.models import OptimizeDTO, TestCaseDTO, Constraints, OptimizationType
 from core.preprocessor import generate_army_specific_strategies
 from core.genetic_strategy_optimization import Strategy, Action, ActionList, run_optimize
 
@@ -53,6 +53,9 @@ def apicall(data: TestCaseDTO) -> Dict:
                     if strategy_id in data.strategies:
                         data.strategies[strategy_id].replaceable = False
 
+    # 获取优化类型
+    opt_type = data.opt_type if hasattr(data, 'opt_type') else OptimizationType.PRICE
+
     # 根据策略库信息，扩充分队级策略
     filtered_data = generate_army_specific_strategies(data)
 
@@ -63,7 +66,8 @@ def apicall(data: TestCaseDTO) -> Dict:
         replacement_options=filtered_data['replacement_options'],
         constraints=Constraints(**filtered_data['constraints']),
         time_limit=filtered_data.get('time_limit'),
-        solution_count=filtered_data.get('solution_count')
+        solution_count=filtered_data.get('solution_count'),
+        opt_type=filtered_data.get('opt_type', OptimizationType.PRICE)  # 添加优化类型参数
     )
 
     # 检查输入数据的有效性
@@ -132,23 +136,27 @@ def apicall(data: TestCaseDTO) -> Dict:
     start_time = time.time()
 
     # 调用优化算法
-    best_combinations, total_prices = run_optimize(
+    best_combinations, total_prices, total_losses = run_optimize(
         action_list,
         data.constraints.aircraft,
         data.constraints.ammunition,
         plot_convergence=False,  # API调用不需要绘图
         solution_count=data.solution_count if data.solution_count is not None else 1,  # 默认最优的1种
-        time_limit=data.time_limit if data.time_limit is not None else None  # 默认无执行时间限制
+        time_limit=data.time_limit if data.time_limit is not None else None,  # 默认无执行时间限制
+        opt_type=data.opt_type if hasattr(data, 'opt_type') else OptimizationType.PRICE  # 添加优化类型参数
     )
 
     # 计算算法耗时
     elapsed_time = round(time.time() - start_time, 2)
 
-    # 计算原始方案的总价格
+    # 计算原始方案的总价格和飞机损失
     original_price = 0
+    original_loss = 0
     for action in action_list.actions:
         for strategy in action.strategies:
             original_price += strategy.price
+            _, loss_count = strategy.get_aircraft_loss()
+            original_loss += loss_count
 
     # 如果没有找到可行解
     if not best_combinations or not total_prices:
@@ -158,17 +166,25 @@ def apicall(data: TestCaseDTO) -> Dict:
             "original_price": original_price,
             "saved_amount": 0,
             "best_price": original_price,  # 第一个方案的价格就是最优价格
+            "original_loss": original_loss,  # 原始飞机损失
+            "saved_loss": 0,  # 节省的飞机损失
+            "best_loss": original_loss,  # 最优方案的飞机损失
+            "is_saving_loss": False,  # 是否节省飞机损失
+            "opt_type": opt_type,  # 优化类型
             "solutions": []
         }
 
     # 组装返回结果
     solutions = []
-    for idx, (combination, price) in enumerate(zip(best_combinations, total_prices)):
+    for idx, (combination, price, loss) in enumerate(zip(best_combinations, total_prices, total_losses)):
         solution = {
             "sort": idx + 1,  # 排序号，从1开始
             "total_price": price,
             "price_difference": abs(original_price - price),
             "is_saving": price < original_price,
+            "total_loss": loss,  # 总飞机损失
+            "loss_difference": abs(original_loss - loss),  # 飞机损失差异
+            "is_saving_loss": loss < original_loss,  # 是否节省飞机损失
             "strategy_details": [],
             "resource_usage": {}  # 直接按军队分类的资源使用情况
         }
@@ -322,16 +338,25 @@ def apicall(data: TestCaseDTO) -> Dict:
                         resource_id = ammo_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in ammo_type else ammo_type
                         to_ammunition[resource_id] = value
 
-                    # 计算价格差异
+                    # 计算价格差异和飞机损失差异
                     price_diff = abs(strategy.price - replacement.price)
+                    loss_diff = abs(from_total_loss - to_total_loss)
 
-                    # 根据价格差异生成描述文本
-                    if price_diff == 0:
-                        desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]也可以完成任务，价格不变"
+                    # 根据优化类型和差异生成描述文本
+                    if opt_type == OptimizationType.AIRCRAFT_LOSS:
+                        if loss_diff == 0:
+                            desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]也可以完成任务，飞机损失不变"
+                        else:
+                            desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]，" \
+                                        f"{'减少' if to_total_loss < from_total_loss else '增加'}" \
+                                        f"{loss_diff}架飞机损失"
                     else:
-                        desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]，" \
-                                    f"{'节省' if replacement.price < strategy.price else '增加'}" \
-                                    f"{price_diff}元"
+                        if price_diff == 0:
+                            desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]也可以完成任务，价格不变"
+                        else:
+                            desc_text = f"在阶段[{action.id}]中，用分队[{from_army_id}]执行任务[{from_strategy_id}]替换为用分队[{to_army_id}]执行任务[{to_strategy_id}]，" \
+                                        f"{'节省' if replacement.price < strategy.price else '增加'}" \
+                                        f"{price_diff}元"
 
                     detail = {
                         "from_strategy_id": from_strategy_id,  # 分割后的策略ID
@@ -358,6 +383,8 @@ def apicall(data: TestCaseDTO) -> Dict:
                         },
                         "price_difference": price_diff,
                         "is_saving": replacement.price < strategy.price,
+                        "loss_difference": loss_diff,  # 飞机损失差异
+                        "is_saving_loss": to_total_loss < from_total_loss,  # 是否节省飞机损失
                         "desc": desc_text
                     }
                     solution["strategy_details"].append(detail)
@@ -385,5 +412,10 @@ def apicall(data: TestCaseDTO) -> Dict:
         "price_difference": abs(original_price - total_prices[0]),
         "is_saving": total_prices[0] < original_price,
         "best_price": total_prices[0],  # 第一个方案的价格就是最优价格
+        "original_loss": original_loss,  # 原始飞机损失
+        "saved_loss": original_loss - total_losses[0],  # 节省的飞机损失
+        "best_loss": total_losses[0],  # 最优方案的飞机损失
+        "is_saving_loss": total_losses[0] < original_loss,  # 是否节省飞机损失
+        "opt_type": opt_type,  # 优化类型
         "solutions": solutions
     }

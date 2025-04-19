@@ -1,6 +1,6 @@
 # coding=utf-8
 
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Optional, Any, List, Dict
 from pydantic import BaseModel, validator
 
@@ -12,6 +12,12 @@ class StatusCode(int, Enum):
     SUCCESS_NO_RESULT = 201  # 优化成功，找不到更优解
     INVALID_PARAMS = 400  # 参数错误
     SERVER_ERROR = 500  # 服务器错误
+
+
+# 优化类型枚举
+class OptimizationType(IntEnum):
+    PRICE = 0  # 效费比优化，价格最低
+    AIRCRAFT_LOSS = 1  # 效损比优化，飞机损失最少
 
 
 # 统一返回格式
@@ -58,6 +64,7 @@ class TestCaseDTO(BaseModel):
     stage: Optional[List[str]] = []  # 需要优化的阶段(传空列表，代表优化全部，否则只优化列表中的阶段)
     time_limit: Optional[int] = None  # 算法执行时间限制
     solution_count: Optional[int] = None  # 返回几种优化方案
+    opt_type: Optional[OptimizationType] = OptimizationType.PRICE  # 优化类型，默认为价格优化
 
 
 # 算法入参
@@ -68,3 +75,4 @@ class OptimizeDTO(BaseModel):
     constraints: Constraints  # 资源约束条件
     solution_count: Optional[int]  # 返回几种优化方案
     time_limit: Optional[int]  # 算法执行时间限制
+    opt_type: Optional[OptimizationType] = OptimizationType.PRICE  # 优化类型，默认为价格优化
