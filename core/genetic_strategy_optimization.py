@@ -157,12 +157,14 @@ class ActionList:
         best_combinations: 最优替换方案列表，每个元素是一个字典，键为策略ID，值为替换后的策略
         total_prices: 对应的总价格列表
         total_losses: 对应的总飞机损失列表
+        total_usages: 对应的总出动飞机数量列表
         """
         # 检查初始方案是否满足资源约束
         initial_ammunition_usage = {}  # 弹药总使用量
         time_based_aircraft_usage = {}  # 基于时间段的飞机使用量
         initial_price = 0
         initial_loss = 0  # 初始方案的总飞机损失
+        initial_usage = 0  # 初始方案的总出动飞机数量
 
         for action in self.actions:
             for strategy in action.strategies:
@@ -172,6 +174,10 @@ class ActionList:
                 # 计算初始方案的飞机损失
                 _, loss_count = strategy.get_aircraft_loss()
                 initial_loss += loss_count
+
+                # 计算初始方案的总出动飞机数量
+                for _, count in aircraft_usage.items():
+                    initial_usage += count
 
                 # 累加弹药总使用量
                 for ammo_type, count in ammunition_usage.items():
@@ -186,7 +192,8 @@ class ActionList:
                             time_based_aircraft_usage[t] = {}
                         
                         for aircraft_type, count in aircraft_usage.items():
-                            time_based_aircraft_usage[t][aircraft_type] = time_based_aircraft_usage[t].get(aircraft_type, 0) + count
+                            time_based_aircraft_usage[t][aircraft_type] = time_based_aircraft_usage[t].get(
+                                aircraft_type, 0) + count
 
         # 检查初始方案是否超出资源约束
         resource_exceeded = False
@@ -197,7 +204,8 @@ class ActionList:
             for aircraft_type, count in t_aircraft_usage.items():
                 if aircraft_type in aircraft_constraints and count > aircraft_constraints[aircraft_type]:
                     resource_exceeded = True
-                    exceeded_resources.append(f"时间点 {t} 的载机 {aircraft_type}: {count}/{aircraft_constraints[aircraft_type]}")
+                    exceeded_resources.append(
+                        f"时间点 {t} 的载机 {aircraft_type}: {count}/{aircraft_constraints[aircraft_type]}")
 
         # 检查弹药总量约束
         for ammo_type, count in initial_ammunition_usage.items():
@@ -221,10 +229,10 @@ class ActionList:
         # 如果没有可替换策略，直接返回初始方案
         if not replaceable_strategies:
             print("没有可替换的策略，保持原方案不变")
-            return {}, [initial_price], [initial_loss]
+            return {}, [initial_price], [initial_loss], [initial_usage]
 
         # 使用遗传算法找出最优替换方案
-        best_combinations, total_prices, total_losses, convergence_data = self._genetic_algorithm_optimize(
+        best_combinations, total_prices, total_losses, total_usages, convergence_data = self._genetic_algorithm_optimize(
             replaceable_strategies,
             aircraft_constraints,
             ammunition_constraints,
@@ -243,16 +251,17 @@ class ActionList:
         # 检查是否找到了满足约束的方案
         if not best_combinations or total_prices[0] == float('inf'):
             print("无法找到满足所有资源约束的方案。")
-            return [], [], []
+            return [], [], [], []
         else:
             if resource_exceeded:
                 # 检查是否真的找到了新的替换方案
                 if not best_combinations[0]:
                     print("无法找到满足资源约束的替换方案。")
-                    return [], [], []
+                    return [], [], [], []
                 else:
                     print(f"找到{len(best_combinations)}个满足资源约束的替换方案:")
-                    for i, (combination, price, loss) in enumerate(zip(best_combinations, total_prices, total_losses), 1):
+                    for i, (combination, price, loss, usage) in enumerate(
+                            zip(best_combinations, total_prices, total_losses, total_usages), 1):
                         print(f"\n方案 {i}:")
                         
                         if opt_type == OptimizationType.AIRCRAFT_LOSS:
@@ -262,6 +271,15 @@ class ActionList:
                             else:
                                 print(f"比原方案增加: {loss - initial_loss} 架")
                             print(f"总价格: {price}")
+                            print(f"总出动飞机数量: {usage} 架")
+                        elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+                            print(f"总出动飞机数量: {usage} 架")
+                            if usage < initial_usage:
+                                print(f"比原方案减少: {initial_usage - usage} 架")
+                            else:
+                                print(f"比原方案增加: {usage - initial_usage} 架")
+                            print(f"总价格: {price}")
+                            print(f"总飞机损失: {loss} 架")
                         else:
                             print(f"总价格: {price}")
                             if price < initial_price:
@@ -269,6 +287,7 @@ class ActionList:
                             else:
                                 print(f"比原方案增加: {price - initial_price}")
                             print(f"总飞机损失: {loss} 架")
+                            print(f"总出动飞机数量: {usage} 架")
 
                         # 打印替换方案详情
                         print("\n替换方案详情:")
@@ -277,10 +296,12 @@ class ActionList:
                             for strategy in action.strategies:
                                 if strategy.replaceable and strategy.id in combination:
                                     replacement = combination[strategy.id]
-                                    print(f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price}, 飞机损失: {replacement.get_aircraft_loss()[1]})")
+                                    print(
+                                        f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price}, 飞机损失: {replacement.get_aircraft_loss()[1]})")
                                 else:
                                     _, loss_count = strategy.get_aircraft_loss()
-                                    print(f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}, 飞机损失: {loss_count}")
+                                    print(
+                                        f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}, 飞机损失: {loss_count}")
 
                         # 打印资源使用情况
                         print("\n资源使用情况:")
@@ -297,10 +318,12 @@ class ActionList:
                                 aircraft_loss_dict, _ = strategy.get_aircraft_loss()
 
                                 for aircraft_type, count in aircraft_usage.items():
-                                    total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type, 0) + count
+                                    total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type,
+                                                                                                   0) + count
 
                                 for aircraft_type, loss_count in aircraft_loss_dict.items():
-                                    total_aircraft_loss[aircraft_type] = total_aircraft_loss.get(aircraft_type, 0) + loss_count
+                                    total_aircraft_loss[aircraft_type] = total_aircraft_loss.get(aircraft_type,
+                                                                                                 0) + loss_count
 
                                 for ammo_type, count in ammunition_usage.items():
                                     total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
@@ -308,24 +331,33 @@ class ActionList:
                         print("载机使用:")
                         for aircraft_type, count in total_aircraft_usage.items():
                             loss = total_aircraft_loss.get(aircraft_type, 0)
-                            print(f"  - {aircraft_type}: 使用 {count}/{aircraft_constraints.get(aircraft_type, '无限制')}, 损失 {loss} 架")
+                            print(
+                                f"  - {aircraft_type}: 使用 {count}/{aircraft_constraints.get(aircraft_type, '无限制')}, 损失 {loss} 架")
 
                         print("弹药使用:")
                         for ammo_type, count in total_ammunition_usage.items():
                             print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
             else:
                 if (opt_type == OptimizationType.PRICE and total_prices[0] < initial_price) or \
-                   (opt_type == OptimizationType.AIRCRAFT_LOSS and total_losses[0] < initial_loss):
+                        (opt_type == OptimizationType.AIRCRAFT_LOSS and total_losses[0] < initial_loss) or \
+                        (opt_type == OptimizationType.AIRCRAFT_USAGE and total_usages[0] < initial_usage):
                     print(f"找到{len(best_combinations)}个更优方案:")
-                    for i, (combination, price, loss) in enumerate(zip(best_combinations, total_prices, total_losses), 1):
+                    for i, (combination, price, loss, usage) in enumerate(
+                            zip(best_combinations, total_prices, total_losses, total_usages), 1):
                         print(f"\n方案 {i}:")
-                        
+
                         if opt_type == OptimizationType.AIRCRAFT_LOSS:
                             print(f"总飞机损失: {loss} 架，减少: {initial_loss - loss} 架")
                             print(f"总价格: {price}")
+                            print(f"总出动飞机数量: {usage} 架")
+                        elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+                            print(f"总出动飞机数量: {usage} 架，减少: {initial_usage - usage} 架")
+                            print(f"总价格: {price}")
+                            print(f"总飞机损失: {loss} 架")
                         else:
                             print(f"总价格: {price}，节省: {initial_price - price}")
                             print(f"总飞机损失: {loss} 架")
+                            print(f"总出动飞机数量: {usage} 架")
 
                         # 打印替换方案详情
                         print("\n替换方案详情:")
@@ -334,10 +366,12 @@ class ActionList:
                             for strategy in action.strategies:
                                 if strategy.replaceable and strategy.id in combination:
                                     replacement = combination[strategy.id]
-                                    print(f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price}, 飞机损失: {replacement.get_aircraft_loss()[1]})")
+                                    print(
+                                        f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price}, 飞机损失: {replacement.get_aircraft_loss()[1]})")
                                 else:
                                     _, loss_count = strategy.get_aircraft_loss()
-                                    print(f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}, 飞机损失: {loss_count}")
+                                    print(
+                                        f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}, 飞机损失: {loss_count}")
 
                         # 打印资源使用情况
                         print("\n资源使用情况:")
@@ -354,10 +388,12 @@ class ActionList:
                                 aircraft_loss_dict, _ = strategy.get_aircraft_loss()
 
                                 for aircraft_type, count in aircraft_usage.items():
-                                    total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type, 0) + count
+                                    total_aircraft_usage[aircraft_type] = total_aircraft_usage.get(aircraft_type,
+                                                                                                   0) + count
 
                                 for aircraft_type, loss_count in aircraft_loss_dict.items():
-                                    total_aircraft_loss[aircraft_type] = total_aircraft_loss.get(aircraft_type, 0) + loss_count
+                                    total_aircraft_loss[aircraft_type] = total_aircraft_loss.get(aircraft_type,
+                                                                                                 0) + loss_count
 
                                 for ammo_type, count in ammunition_usage.items():
                                     total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
@@ -365,17 +401,16 @@ class ActionList:
                         print("载机使用:")
                         for aircraft_type, count in total_aircraft_usage.items():
                             loss = total_aircraft_loss.get(aircraft_type, 0)
-                            print(f"  - {aircraft_type}: 使用 {count}/{aircraft_constraints.get(aircraft_type, '无限制')}, 损失 {loss} 架")
+                            print(
+                                f"  - {aircraft_type}: 使用 {count}/{aircraft_constraints.get(aircraft_type, '无限制')}, 损失 {loss} 架")
 
                         print("弹药使用:")
                         for ammo_type, count in total_ammunition_usage.items():
                             print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
-                    else:
-                        print("未找到更优方案，保持原方案不变")
+                else:
+                    print("未找到更优方案，保持原方案不变")
 
-        return best_combinations, total_prices, total_losses
-
-
+        return best_combinations, total_prices, total_losses, total_usages
 
     def _genetic_algorithm_optimize(self, replaceable_strategies, aircraft_constraints, ammunition_constraints,
                                     initial_price, initial_loss, plot_convergence=False, solution_count=1,
@@ -398,6 +433,7 @@ class ActionList:
         best_combinations: 最优替换方案列表
         total_prices: 最优方案总价格列表
         total_losses: 最优方案总飞机损失列表
+        total_usages: 最优方案总出动飞机数量列表
         convergence_data: 收敛数据，如果plot_convergence为True
         """
         # 遗传算法参数
@@ -413,9 +449,18 @@ class ActionList:
         best_solutions = []
         best_prices = []
         best_losses = []
+        best_usages = []  # 记录最优解的总出动飞机数量
 
         # 用于记录收敛曲线数据
         convergence_data = [] if plot_convergence else None
+
+        # 计算初始方案的总出动飞机数量
+        initial_usage = 0
+        for action in self.actions:
+            for strategy in action.strategies:
+                aircraft_usage, _ = strategy.get_resource_usage()
+                for _, count in aircraft_usage.items():
+                    initial_usage += count
 
         # 记录开始时间
         start_time = time.time()
@@ -425,14 +470,14 @@ class ActionList:
             # 评估种群适应度
             fitness_scores = []
             for individual in population:
-                fitness, price, loss, valid = self._evaluate_fitness(
+                fitness, price, loss, usage, valid = self._evaluate_fitness(
                     individual,
                     replaceable_strategies,
                     aircraft_constraints,
                     ammunition_constraints,
                     opt_type
                 )
-                fitness_scores.append((individual, fitness, price, loss, valid))
+                fitness_scores.append((individual, fitness, price, loss, usage, valid))
 
             # 排序，适应度高的在前面
             fitness_scores.sort(key=lambda x: x[1], reverse=True)
@@ -441,14 +486,18 @@ class ActionList:
             current_best_valid_fitness = float('-inf')
             current_best_valid_price = float('inf')
             current_best_valid_loss = float('inf')
+            current_best_valid_usage = float('inf')
 
             # 获取所有有效解
-            valid_solutions = [(individual, fitness, price, loss) for individual, fitness, price, loss, valid in
+            valid_solutions = [(individual, fitness, price, loss, usage) for
+                               individual, fitness, price, loss, usage, valid in
                                fitness_scores if valid]
 
             # 根据优化类型排序
             if opt_type == OptimizationType.AIRCRAFT_LOSS:
                 valid_solutions.sort(key=lambda x: x[3])  # 按飞机损失排序
+            elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+                valid_solutions.sort(key=lambda x: x[4])  # 按出动飞机数量排序
             else:
                 valid_solutions.sort(key=lambda x: x[2])  # 按价格排序
 
@@ -456,9 +505,10 @@ class ActionList:
             new_best_solutions = []
             new_best_prices = []
             new_best_losses = []
+            new_best_usages = []
             seen_combinations = set()  # 用于记录已经见过的方案
 
-            for individual, fitness, price, loss in valid_solutions:
+            for individual, fitness, price, loss, usage in valid_solutions:
                 # 解码当前个体
                 combination = self._decode_individual(individual, replaceable_strategies)
 
@@ -471,6 +521,8 @@ class ActionList:
                     if len(new_best_solutions) < solution_count:
                         should_add = True
                     elif opt_type == OptimizationType.AIRCRAFT_LOSS and loss < max(new_best_losses):
+                        should_add = True
+                    elif opt_type == OptimizationType.AIRCRAFT_USAGE and usage < max(new_best_usages):
                         should_add = True
                     elif opt_type == OptimizationType.PRICE and price < max(new_best_prices):
                         should_add = True
@@ -486,6 +538,16 @@ class ActionList:
                             new_best_solutions.pop(max_loss_index)
                             new_best_prices.pop(max_loss_index)
                             new_best_losses.pop(max_loss_index)
+                            new_best_usages.pop(max_loss_index)
+                        elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+                            max_usage_index = new_best_usages.index(max(new_best_usages))
+                            old_combination = new_best_solutions[max_usage_index]
+                            old_combination_tuple = tuple(sorted((k, v.id) for k, v in old_combination.items()))
+                            seen_combinations.remove(old_combination_tuple)
+                            new_best_solutions.pop(max_usage_index)
+                            new_best_prices.pop(max_usage_index)
+                            new_best_losses.pop(max_usage_index)
+                            new_best_usages.pop(max_usage_index)
                         else:
                             max_price_index = new_best_prices.index(max(new_best_prices))
                             old_combination = new_best_solutions[max_price_index]
@@ -494,29 +556,36 @@ class ActionList:
                             new_best_solutions.pop(max_price_index)
                             new_best_prices.pop(max_price_index)
                             new_best_losses.pop(max_price_index)
+                            new_best_usages.pop(max_price_index)
 
                     new_best_solutions.append(combination)
                     new_best_prices.append(price)
                     new_best_losses.append(loss)
+                    new_best_usages.append(usage)
                     seen_combinations.add(combination_tuple)
 
                     if fitness > current_best_valid_fitness:
                         current_best_valid_fitness = fitness
                         current_best_valid_price = price
                         current_best_valid_loss = loss
+                        current_best_valid_usage = usage
 
             # 更新全局最优解集合
             if new_best_solutions:
                 best_solutions = new_best_solutions
                 best_prices = new_best_prices
                 best_losses = new_best_losses
+                best_usages = new_best_usages
 
-            # 记录当前代的最佳适应度和价格/损失
+            # 记录当前代的最佳适应度和价格/损失/出动数量
             if plot_convergence:
                 # 根据优化类型记录不同的收敛数据
                 if opt_type == OptimizationType.AIRCRAFT_LOSS:
                     convergence_data.append(
                         (generation, current_best_valid_loss if current_best_valid_loss != float('inf') else None))
+                elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+                    convergence_data.append(
+                        (generation, current_best_valid_usage if current_best_valid_usage != float('inf') else None))
                 else:
                     convergence_data.append(
                         (generation, current_best_valid_price if current_best_valid_price != float('inf') else None))
@@ -533,6 +602,13 @@ class ActionList:
                     if opt_type == OptimizationType.AIRCRAFT_LOSS:
                         if all(
                                 abs(data[1] - best_losses[0]) < 0.001 * best_losses[0] if data[1] is not None else False
+                                for data in convergence_data[-30:]
+                        ):
+                            print("最近30代无显著改进，提前结束迭代")
+                            break
+                    elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+                        if all(
+                                abs(data[1] - best_usages[0]) < 0.001 * best_usages[0] if data[1] is not None else False
                                 for data in convergence_data[-30:]
                         ):
                             print("最近30代无显著改进，提前结束迭代")
@@ -563,15 +639,16 @@ class ActionList:
 
         # 如果没有找到满足约束的解，返回空方案列表
         if not best_solutions:
-            return [], [float('inf')], [float('inf')], convergence_data
+            return [], [float('inf')], [float('inf')], [float('inf')], convergence_data
 
         # 在返回前对最终结果进行去重
         unique_solutions = []
         unique_prices = []
         unique_losses = []
+        unique_usages = []
         seen_combinations = set()
 
-        for solution, price, loss in zip(best_solutions, best_prices, best_losses):
+        for solution, price, loss, usage in zip(best_solutions, best_prices, best_losses, best_usages):
             # 将solution转换为可哈希的形式以便去重
             solution_tuple = tuple(sorted((k, v.id) for k, v in solution.items()))
 
@@ -580,16 +657,17 @@ class ActionList:
                 unique_solutions.append(solution)
                 unique_prices.append(price)
                 unique_losses.append(loss)
+                unique_usages.append(usage)
                 seen_combinations.add(solution_tuple)
 
-        return unique_solutions, unique_prices, unique_losses, convergence_data
+        return unique_solutions, unique_prices, unique_losses, unique_usages, convergence_data
 
     def _plot_convergence_curve(self, convergence_data, opt_type=OptimizationType.PRICE):
         """
         绘制遗传算法的收敛曲线
 
         参数:
-        convergence_data: 收敛数据，包含(代数, 价格或损失)元组的列表
+        convergence_data: 收敛数据，包含(代数, 价格或损失或出动数量)元组的列表
         opt_type: 优化类型，默认为价格优化
         """
         generations = [data[0] for data in convergence_data]
@@ -623,6 +701,8 @@ class ActionList:
         # 根据优化类型设置y轴标签
         if opt_type == OptimizationType.AIRCRAFT_LOSS:
             plt.ylabel('最佳有效解飞机损失数')
+        elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+            plt.ylabel('最佳有效解出动飞机数量')
         else:
             plt.ylabel('最佳有效解价格')
 
@@ -637,6 +717,8 @@ class ActionList:
         # 根据优化类型设置文件名
         if opt_type == OptimizationType.AIRCRAFT_LOSS:
             filename = 'convergence_curve_loss.png'
+        elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+            filename = 'convergence_curve_usage.png'
         else:
             filename = 'convergence_curve_price.png'
 
@@ -676,7 +758,7 @@ class ActionList:
     def _evaluate_fitness(self, individual, replaceable_strategies, aircraft_constraints, ammunition_constraints,
                           opt_type=OptimizationType.PRICE):
         """
-        评估个体的适应度，计算在给定约束条件下的总价格、总飞机损失和可行性
+        评估个体的适应度，计算在给定约束条件下的总价格、总飞机损失、总出动飞机数量和可行性
 
         参数:
         individual: list, 个体（染色体），表示每个可替换策略的替换选项索引
@@ -686,18 +768,20 @@ class ActionList:
         opt_type: 优化类型，默认为价格优化
 
         返回:
-        tuple: (fitness, total_price, total_loss, valid)
+        tuple: (fitness, total_price, total_loss, total_usage, valid)
             - fitness: float, 适应度分数，有效解为优化目标的负值，无效解为惩罚值
             - total_price: float, 方案总价格
             - total_loss: int, 方案总飞机损失
+            - total_usage: int, 方案总出动飞机数量
             - valid: bool, 是否满足所有约束条件
         """
         # 解码个体，获取替换方案
         combination = self._decode_individual(individual, replaceable_strategies)
 
-        # 计算总价格、总飞机损失和资源使用情况
+        # 计算总价格、总飞机损失、总出动飞机数量和资源使用情况
         total_price = 0
         total_loss = 0
+        total_usage = 0  # 总出动飞机数量
         total_ammunition_usage = {}  # 弹药总使用量
         time_based_aircraft_usage = {}  # 基于时间段的飞机使用量
         time_based_aircraft_loss = {}  # 基于时间段的飞机损耗量
@@ -723,6 +807,10 @@ class ActionList:
                 aircraft_loss, loss_count = strategy.get_aircraft_loss()
                 total_loss += loss_count
 
+                # 累加总出动飞机数量
+                for aircraft_type, count in aircraft_usage.items():
+                    total_usage += count
+
                 # 累加弹药使用量
                 for ammo_type, count in ammunition_usage.items():
                     total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
@@ -740,7 +828,7 @@ class ActionList:
                         for aircraft_type, count in aircraft_usage.items():
                             # 检查可用数量
                             if aircraft_type in available_aircraft and available_aircraft[aircraft_type] < count:
-                                return float('-inf'), float('inf'), float('inf'), False  # 资源不足，无效解
+                                return float('-inf'), float('inf'), float('inf'), float('inf'), False  # 资源不足，无效解
 
                             # 记录使用量
                             time_based_aircraft_usage[t][aircraft_type] = time_based_aircraft_usage[t].get(
@@ -755,7 +843,7 @@ class ActionList:
                             if t == end_time - 1:  # 最后一个时间点
                                 available_aircraft[aircraft_type] -= loss_count
                                 if available_aircraft[aircraft_type] < 0:
-                                    return float('-inf'), float('inf'), float('inf'), False  # 资源不足，无效解
+                                    return float('-inf'), float('inf'), float('inf'), float('inf'), False  # 资源不足，无效解
 
         # 检查资源约束
         valid = True
@@ -769,11 +857,13 @@ class ActionList:
         # 如果有效，根据优化类型返回适应度
         if valid:
             if opt_type == OptimizationType.AIRCRAFT_LOSS:
-                return -total_loss, total_price, total_loss, True  # 飞机损失越少适应度越高
+                return -total_loss, total_price, total_loss, total_usage, True  # 飞机损失越少适应度越高
+            elif opt_type == OptimizationType.AIRCRAFT_USAGE:
+                return -total_usage, total_price, total_loss, total_usage, True  # 出动飞机数量越少适应度越高
             else:
-                return -total_price, total_price, total_loss, True  # 价格越低适应度越高
+                return -total_price, total_price, total_loss, total_usage, True  # 价格越低适应度越高
         else:
-            return float('-inf'), float('inf'), float('inf'), False
+            return float('-inf'), float('inf'), float('inf'), float('inf'), False
 
     def _selection(self, fitness_scores):
         """
@@ -797,7 +887,7 @@ class ActionList:
 
         # 轮盘赌选择
         current_sum = 0
-        for individual, fitness, _, _, _ in fitness_scores:
+        for individual, fitness, _, _, _, _ in fitness_scores:
             current_sum += (fitness + offset)
             if current_sum >= r:
                 return individual
@@ -961,7 +1051,7 @@ def run_optimize(action_list, aircraft_constraints, ammunition_constraints, plot
     :return: 最优替换方案列表，总价格列表，总飞机损失列表
     """
     # 优化，并传入plot_convergence参数和优化类型
-    best_combinations, total_prices, total_losses = action_list.optimize(
+    best_combinations, total_prices, total_losses, total_usages = action_list.optimize(
         aircraft_constraints,
         ammunition_constraints,
         plot_convergence=plot_convergence,
@@ -970,7 +1060,7 @@ def run_optimize(action_list, aircraft_constraints, ammunition_constraints, plot
         opt_type=opt_type
     )
     print("-" * 50)
-    return best_combinations, total_prices, total_losses
+    return best_combinations, total_prices, total_losses, total_usages
 
 
 # 运行单个测试用例

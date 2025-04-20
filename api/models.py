@@ -18,6 +18,7 @@ class StatusCode(int, Enum):
 class OptimizationType(IntEnum):
     PRICE = 0  # 效费比优化，价格最低
     AIRCRAFT_LOSS = 1  # 效损比优化，飞机损失最少
+    AIRCRAFT_USAGE = 2  # 出动兵力最少（总出动飞机数量最少）
 
 
 # 统一返回格式
