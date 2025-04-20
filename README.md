@@ -1,32 +1,23 @@
 # 策略优化算法
 
 ## 目录结构
-
 ```shell
-.
-├── README.md
-├── api # 对外提供API
-│   ├── __init__.py
-│   ├── models.py # 实体类，入参格式
-│   └── routes.py # 主接口 /alg/optimize，接收入参，调用apicall.py
-├── api.log
-├── core  # 算法实现
-│   ├── __init__.py
-│   ├── apicall.py  # 供api调用的算法顶层函数
-│   ├── generate.sh # [废弃]生成测试样例脚本，调用generate_test_case.py
-│   ├── generate_test_case.py # [废弃]生成测试样例
-│   ├── genetic_strategy_optimization.py  # 遗传算法实现（核心算法）
-│   ├── preprocessor.py # 预处理器，根据策略库扩充分队级策略
-│   ├── output
-│   │   └── convergence_curve.png # 遗传算法收敛曲线（通过API调用时默认不绘制）
-│   ├── strategy_optimization.py  # [废弃]回溯算法实现（暂时没用）
-│   ├── testcases # 测试样例（单独运行genetic_strategy_optimization.py读取的测试样例）
-│   │   └── test_case_generated.json
-│   └── testcases[DRAFT]  # 测试样例备份
-│       ├── test_case_1.json
-│       ├── test_case_2.json
-│       └── test_case_3.json
-└── main.py # 算法服务启动，入口文件
+./
+├── README.md // 项目说明
+├── api // API模块
+│   ├── __init__.py
+│   ├── models.py // 实体类
+│   └── routes.py // 主接口 /alg/optimize，接收入参，调用apicall.py
+├── core  // 算法模块
+│   ├── __init__.py
+│   ├── apicall.py  // 分队级样本扩充调用 + 算法调用
+│   ├── genetic_strategy_optimization.py // 遗传算法实现三个优化目标
+│   ├── output  // 收敛曲线，api调用默认不提供
+│   │   └── convergence_curve.png
+│   ├── preprocessor.py // 分队级样本扩充
+│   └── testcases // 测试用例
+├── main.py // 算法服务入口
+└── static  // swagger-ui静态文件
 ```
 
 ## 算法核心接口调用链路
@@ -64,7 +55,403 @@
 ```
 
 ## 核心接口 `/alg/optimize`
-### 入参说明
+### 版本：第二次对接 [待集成]
+> 涉及版本：
+> * 20250421-出动bingli最少优化
+> * 20250420-效损比优化
+> * 20250419-考虑战损的效费比优化
+> * 20250416-考虑时间片资源限制
+#### 更新说明
+1. 针对效费比优化模型，新增「战损」和「任务出动时序」对于模型优化的影响。策略费用计算逻辑由「飞机费用+dan费用」改为：「损失飞机费用+dan费用」。
+2. 新增效损比优化模型，优化目标为总飞机损失数量最少。
+3. 新增出动bingli最少优化模型，优化目标为总出动飞机架次最少。
+
+#### 接口变动
+##### 20250421-出动bingli最少优化
+
+「入参」
+
+- opt_type字段，新增优化类型，2 - 出动bingli最少优化。
+
+    ```python
+    class OptimizationType(IntEnum):
+        PRICE = 0  # 效费比优化，价格最低
+        AIRCRAFT_LOSS = 1  # 效损比优化，飞机损失最少
+    [+] AIRCRAFT_USAGE = 2  # 出动兵力最少（总出动飞机数量最少）
+    ```
+
+「返回值」
+
+- data     
+
+    [+] original_bingli: int 原始方案兵力数量     
+
+    [+] saved_bingli: int 节省的兵力(原始-最优)    
+
+    [+] best_bingli: int  最优方案的兵力     
+
+    [+] is_saving_bingli: boolean 是否节省出动兵力   
+
+- data.solutions     
+
+    [+] total_bingli: int 当前方案总出动兵力     
+
+    [+] bingli_difference: int 出动兵力差异(原始-当前)     
+
+    [+] is_saving_bingli: boolean 是否节省出动兵力  
+
+- data.solutions.strategy_details     
+
+    [+] bingli_difference: int 替换后出动兵力差异     
+
+    [+] is_saving_bingli: 是否节省出动兵力   
+
+- data.solutions.strategy_details.from_strategy_details     
+
+    [+] total_bingli 原策略的总出动兵力   
+
+- data.solutions.strategy_details.to_strategy_details     
+
+    [+] total_bingli 替换策略的总出动兵力
+
+##### 20250420-效损比优化
+
+「入参」
+
+- 新增opt_type字段，代表优化类型。0 - 效费比优化 1 - 效损比优化。
+
+    ```python
+    class TestCaseDTO(BaseModel):
+        strategies: Dict[str, Strategy]  # 键为策略ID，值为策略详情
+        actions: Dict[str, List[str]]  # 键为行动ID，值为策略ID列表
+        replacement_options: Dict[str, List[str]]  # 键为可替换策略ID，值为替换策略ID列表
+        armies: Dict[str, ArmyResource]  # 键为军队ID，值为军队资源
+        stage: Optional[List[str]] = []  # 需要优化的阶段(传空列表，代表优化全部，否则只优化列表中的阶段)
+        time_limit: Optional[int] = None  # 算法执行时间限制
+        solution_count: Optional[int] = None  # 返回几种优化方案
+    [+] opt_type: Optional[OptimizationType] = OptimizationType.PRICE  # 优化类型，默认为价格优化
+    ```
+
+    ```python
+    class OptimizationType(IntEnum):
+        PRICE = 0  # 效费比优化，价格最低
+    [+] AIRCRAFT_LOSS = 1  # 效损比优化，飞机损失最少
+    ```
+
+「返回值」
+
+- data     
+
+    [+] original_loss: int 原始方案飞机损失    
+
+    [+] saved_loss: int 节省的飞机损失(原始-最优)     
+
+    [+] best_loss: int  最优方案的飞机损失    
+
+    [+] is_saving_loss: boolean 是否节省飞机损失     
+
+    [+] opt_type: IntEnum   
+
+- data.solutions     
+
+    [+] total_loss: int 当前方案总飞机损失     
+
+    [+] loss_difference: int 飞机损失差异(原始-当前)     
+
+    [+] is_saving_loss: boolean 是否节省飞机损失   
+
+- data.solutions.strategy_details     
+
+    [+] loss_difference: int 当前策略飞机损失差异     
+
+    [+] is_saving_loss: 是否节省飞机损失
+
+##### 20250419-考虑战损的效费比优化
+
+「入参」
+
+- strategies.策略ID对应的策略详情中，新增 penetration_rate 突防率 字段。
+
+    > 原策略、替换策略均需要具备此字段，代表突防成功的概率。飞机损失计算逻辑为：飞机数量 * （1 - 突防率）
+
+    ```python
+    class Strategy(BaseModel):
+        replaceable: bool
+        aircraft: Dict[str, List[int]]  # 键为载机类型，值为[数量, 单价]列表
+        ammunition: Dict[str, List[int]]  # 键为弹药类型，值为[数量, 单价]列表
+        army_init: Optional[str] = None  # 策略初始军队 - 「只有原始草案中的策略携带该参数」
+        time_range: Optional[List[int]] = None  # 策略的时间范围 [开始时间, 结束时间] - 「只有原始草案中的策略携带该参数」
+    [+] penetration_rate: Optional[float] = 0.8  # 突防率，0.0~1.0之间，默认0.8
+    ```
+
+「返回值」
+
+- solutions.resource_usage
+
+     [+] loss 飞机损毁数量  
+
+-  solutions.strategy_details.from_strategy_details     
+
+     [+] aircraft_loss: Dict[aircraft_type, count] 区分飞机类型的损毁数(字典)     
+
+     [+] total_aircraft_loss: int 不区分飞机类型的总损毁数    
+
+     [+] penetration_rate: float 突防率(回传)   
+
+-  solutions.strategy_details.to_strategy_details      
+
+     [+] aircraft_loss: Dict[aircraft_type, count] 区分飞机类型的损毁数(字典)     
+
+     [+] total_aircraft_loss: int 不区分飞机类型的总损毁数     
+
+     [+] penetration_rate: float 突防率(回传)
+
+##### 20250416-考虑时间片资源限制
+
+「入参」
+
+- stategies.策略ID对应的策略详情中，新增 time_range字段。
+
+    > 原始方案中的策略，必须携带time_range字段；替换策略一般不带time_range字段，会继承原策略的time_range。
+
+```python
+class Strategy(BaseModel):
+    replaceable: bool
+    aircraft: Dict[str, List[int]]  # 键为载机类型，值为[数量, 单价]列表
+    ammunition: Dict[str, List[int]]  # 键为弹药类型，值为[数量, 单价]列表
+    army_init: Optional[str] = None  # 策略初始军队 - 「只有原始草案中的策略携带该参数」
+[+] time_range: Optional[List[int]] = None  # 策略的时间范围 [开始时间, 结束时间] - 「只有原始草案中的策略携带该参数」
+```
+
+「返回值」
+
+- data.solutions.strategy_details.from_strategy_details
+
+​       [+] time_range
+
+- data.solutions.strategy_details.to_strategy_details
+
+   [+] time_range
+
+#### 请求示例
+
+##### 入参
+
+```json
+{
+  "opt_type": 2,	// 新增
+  "strategies": {
+    "策略1": {
+      "replaceable": true,
+      "army_init": "军队1",
+      "aircraft": {
+        "C型": [30, 1000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "time_range": [0, 90],	// 新增
+      "penetration_rate": 0.9	// 新增
+    },
+    "策略1-t1": {
+      "replaceable": false,
+      "aircraft": {
+        "C-t1型": [20, 500]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.8	// 新增
+    },
+    "策略1-t2": {
+      "replaceable": false,
+      "aircraft": {
+        "C-t2型": [10, 2000]
+      },
+      "ammunition": {
+        "导弹X": [1, 500]
+      },
+      "penetration_rate": 0.5	// 新增
+    }
+  },
+  "actions": {
+    "行动1": ["策略1"]
+  },
+  "replacement_options": {
+    "策略1": ["策略1-t1", "策略1-t2"]
+  },
+  "stage": ["行动1"],
+  "armies": { 
+    "军队1":{
+      "aircraft":{
+        "C型":{
+          "数量":30
+        },
+        "C-t1型":{
+          "数量":20
+        },
+        "C-t2型":{
+          "数量":10
+        }
+      },
+      "ammunition":{
+        "导弹X":{
+          "数量":12
+        }
+      }
+    }
+    },
+  "time_limit": 60,
+  "solution_count": 3
+}
+```
+
+##### 返回值
+
+> 说明：根据不同的opt_type查看不同的优化结果（data下的第一级字段），如opt_type == 1，效损比优化，就看loss相关的字段；出动bingli优化，就看bingli相关的字段，不要全看。
+
+```json
+{
+  "code": 200,	// 200成功，201成功但找不到更优解，400参数错误，500服务器错误
+  "msg": "优化成功",
+  "data": {
+    "elapsed_time": 2.58,
+    "solution_count": 3,
+    "original_price": 3500,
+    "price_difference": 7000,
+    "is_saving": false,
+    "best_price": 10500,
+    "original_loss": 3,	// 新增
+    "saved_loss": -2,	// 新增
+    "best_loss": 5,	// 新增
+    "is_saving_loss": false,	// 新增
+    "original_bingli": 30,	// 新增
+    "saved_bingli": 20,	// 新增
+    "best_bingli": 10,	// 新增
+    "is_saving_bingli": true,	// 新增
+    "opt_type": 2,	// 新增
+    "solutions": [
+      {
+        "sort": 1,
+        "total_price": 10500,
+        "price_difference": 7000,
+        "is_saving": false,
+        "total_loss": 5,	// 新增
+        "loss_difference": 2,	// 新增
+        "is_saving_loss": false,	// 新增
+        "total_bingli": 10,	// 新增
+        "bingli_difference": 20,	// 新增
+        "is_saving_bingli": true,	// 新增
+        "strategy_details": [
+          {
+            "from_strategy_id": "策略1",
+            "from_army_id": "军队1",
+            "to_strategy_id": "策略1-t2",
+            "to_army_id": "军队1",
+            "from_strategy_details": {
+              "aircraft": {
+                "C型": [
+                  30,
+                  1000
+                ]
+              },
+              "ammunition": {
+                "导弹X": [
+                  1,
+                  500
+                ]
+              },
+              "price": 3500,
+              "time_range": [
+                0,
+                90
+              ],
+              "aircraft_loss": {	// 新增
+                "C型": 3
+              },
+              "total_aircraft_loss": 3,	// 新增
+              "penetration_rate": 0.9,	// 新增
+              "total_bingli": 30	// 新增
+            },
+            "to_strategy_details": {
+              "aircraft": {
+                "C-t2型": [
+                  10,
+                  2000
+                ]
+              },
+              "ammunition": {
+                "导弹X": [
+                  1,
+                  500
+                ]
+              },
+              "price": 10500,
+              "time_range": [
+                0,
+                90
+              ],
+              "aircraft_loss": {	// 新增
+                "C-t2型": 5
+              },
+              "total_aircraft_loss": 5,	// 新增
+              "penetration_rate": 0.9,	// 新增
+              "total_bingli": 10	// 新增
+            },
+            "price_difference": 7000,
+            "is_saving": false,
+            "loss_difference": 2,	// 新增
+            "is_saving_loss": false,	// 新增
+            "bingli_difference": 20,	// 新增
+            "is_saving_bingli": true,	// 新增
+            "desc": "在阶段[行动1]中，用分队[军队1]执行任务[策略1]替换为用分队[军队1]执行任务[策略1-t2]，减少20兵力派遣"
+          }
+        ],
+        "resource_usage": {
+          "军队1": {
+            "aircraft": {
+              "C型": {
+                "total": 30,
+                "used": 0,
+                "loss": 0,	// 新增
+                "remaining": 30
+              },
+              "C-t1型": {
+                "total": 20,
+                "used": 0,
+                "loss": 0,	// 新增
+                "remaining": 20
+              },
+              "C-t2型": {
+                "total": 10,
+                "used": 10,
+                "loss": 5,	// 新增
+                "remaining": 5
+              }
+            },
+            "ammunition": {
+              "导弹X": {
+                "total": 12,
+                "used": 1,
+                "remaining": 11
+              }
+            }
+          }
+        },
+        "replacement_type": 1,	
+        "replacement_desc": "本方案为优化后方案，价格节省-7000元，兵力派遣改变"
+      },
+      {...省略...}
+  }
+}
+```
+
+
+
+### 版本：第一次对接 [已集成]
+> 涉及版本：
+> * 20250323-效费比优化
+#### 入参说明
 ```json
 {
   "strategies": {  // 策略字典，键为策略ID
@@ -95,6 +482,7 @@
   "actions": {  // 行动字典，键为行动ID
     "行动1": ["策略1"]  // 键为行动ID，值为该行动包含的策略ID列表
   },
+  "stage": ["行动1"], // 需要优化的阶段，传哪个阶段，优化哪个阶段
   "replacement_options": {  // 替换选项字典
     "策略1": ["策略1的替换策略-1"]  // 键为可替换策略ID，值为可用于替换的策略ID列表
   },
@@ -125,7 +513,7 @@
 }
 ```
 
-## 返回值说明
+#### 返回值说明
 ```json
 {
   "code": 200,  // 状态码，200表示成功
