@@ -15,7 +15,9 @@
 │   ├── output  // 收敛曲线，api调用默认不提供
 │   │   └── convergence_curve.png
 │   ├── preprocessor.py // 分队级样本扩充
-│   └── testcases // 测试用例
+│   ├── converter.py // 接口参数转换
+│   ├── testcases // 测试用例[废弃]
+│   └── testcasesnew // 测试用例[新数据结构]
 ├── main.py // 算法服务入口
 └── static  // swagger-ui静态文件
 ```
@@ -23,16 +25,17 @@
 ## 算法核心接口调用链路
 1. **入口点**: `/alg/optimize` API接口
    - 位于 `routes.py` 中的 `optimize` 函数
-   - 接收 `TestCaseDTO` 类型的请求数据
+   - 接收 `TestCaseNewDTO` 类型的请求数据
 
 2. **预处理阶段**:
    - 调用 `apicall.py` 中的 `apicall` 函数
-   - `apicall` 函数首先调用 `preprocessor.py` 中的 `generate_army_specific_strategies` 函数
+   - `apicall` 函数首先调用 `converter.py` ，将`TestCaseNewDTO`转换为`TestCaseDTO`
+   - 再调用 `preprocessor.py` 中的 `generate_army_specific_strategies` 函数
    - 该函数根据策略库信息扩充分队级策略，处理分队资源约束
 
 3. **优化阶段**:
    - `apicall` 函数将预处理后的数据转换为 `OptimizeDTO` 对象
-   - 创建 `Strategy` 对象和 `ActionList` 对象
+   - 创建 `Strategy` 对象和 `ActionList` 对象，构建算法入参
    - 调用 `genetic_strategy_optimization.py` 中的 `run_optimize` 函数
    - 该函数使用遗传算法寻找最优策略组合
 
@@ -41,21 +44,286 @@
    - 生成详细的替换方案和描述
    - 返回包含算法耗时、方案数量、最优价格和具体方案详情的结果
 
-5. **响应返回**:
-   - `optimize` 函数将结果包装为 `CommonResponse` 对象返回给客户端
-
-## 数据流转图
-
-```
-客户端请求 → /alg/optimize API → apicall() → generate_army_specific_strategies() → 
-                                                ↓
-                                            run_optimize() → 
-                                                ↓
-                                            结果处理 → CommonResponse → 客户端响应
-```
-
 ## 核心接口 `/alg/optimize`
-### 版本：第二次对接 [待集成]
+
+### 版本：修改接口入参、反参格式 [待集成]
+
+#### 接口变动
+
+「入参」
+
+```json
+{
+  "opt_type": 2,	// 0-效费比 1-效损比 2-最少出动兵力
+  "strategies": [	// 策略列表
+    {
+      "strategy_id": 1,	// 策略ID
+      "replaceable": true,	// 是否为可替换策略（替换策略列表中的策略，一定是false，原始草案中可能true/false，取决于有无可替换策略）
+      "army_init": 100,		// 初始执行编队ID（替换策略列表中的策略，无初始化军队）
+      "aircraft": [{	// 计划出动载机
+        "aircraft_type": 10001,	// 载机ID
+        "count": 30,	// 数量
+        "price": 1000	// 造价
+      }],
+      "ammunition": [{	// 计划挂载弹
+        "ammunition_type": 1000,	// 弹ID
+        "count": 1,	// 数量
+        "price": 500	// 造价
+      }],
+      "time_range": {	// 出动时间（如：T+0, T+90）
+        "start": 0,	// 开始时间
+        "end":  90	// 结束时间
+      },
+      "penetration_rate": 0.9	// 策略执行的飞机突防率
+    },
+    {
+      "strategy_id": 2,
+      "replaceable": false,	// 替换策略列表中的策略，一定是false
+      "army_init": null,	// 替换策略列表中的策略，一定没有初始化军队
+      "aircraft": [
+          {
+              "aircraft_type": 10002,
+              "count": 20,
+              "price": 500
+          }
+      ],
+      "ammunition": [
+          {
+              "ammunition_type": 1000,
+              "count": 1,
+              "price": 500
+          }
+      ],
+      "time_range": {	// 替换策略列表中的策略，一定没有任务执行时间，算法会从原策略继承
+          "start": null,
+          "end": null
+      },
+      "penetration_rate": 0.8	// 替换策略列表中的策略，一定是有突防率的
+  },
+  {
+      "strategy_id": 3,
+      "replaceable": false,
+      "army_init": null,
+      "aircraft": [
+          {
+              "aircraft_type": 10003,
+              "count": 10,
+              "price": 2000
+          }
+      ],
+      "ammunition": [
+          {
+              "ammunition_type": 1000,
+              "count": 1,
+              "price": 500
+          }
+      ],
+      "time_range": {
+          "start": null,
+          "end": null
+      },
+      "penetration_rate": 0.5
+  }],
+  "actions": [	// 行动-策略 （可以对应为阶段-任务）
+        {
+            "action_id": 10,	// 行动ID（阶段ID）
+            "strategies": [1]	// 原始草案中的任务ID（策略ID）
+        }
+    ],
+    "replacement_options": [	// 可替换策略列表
+        {
+            "original_strategy": 1,	// 草案中，原策略ID
+            "replacement_strategies": [2, 3]	// 可替换策略列表，策略ID
+        }
+    ],
+    "stage": [10],	// 优化阶段（传哪个阶段ID，优化哪个，可以优化多个）
+    "armies": [	// 兵力编成数据
+        {
+            "army_id": 100,	// 分队ID
+            "aircraft": [	// 分队载机情况（分队由多少载机）
+                {
+                    "aircraft_type": 10001,	// 载机type
+                    "count": 30	// 数量
+                },
+                {
+                    "aircraft_type": 10002,
+                    "count": 20
+                },
+                {
+                    "aircraft_type": 10003,
+                    "count": 10
+                }
+            ],
+            "ammunition": [	// 分队 弹情况 （分队有多少弹）
+                {
+                    "ammunition_type": 1000,	// 弹type
+                    "count": 12	// 数量
+                }
+            ]
+        }
+    ],
+  "time_limit": 60,	// 算法执行时间限制 (s)
+  "solution_count": 3	// 返回几种最优的优化方案
+}
+```
+
+「返回值」
+
+```json
+{
+  "code": 200,	// 200-优化成功 201-找不到更优解 400-入参错误 500-算法错误
+  "msg": "优化成功",
+  "data": {
+    "elapsed_time": 2.66,	// 算法执行时间
+    "solution_count": 3,	// 返回的实际优化方案数（用户想要10种，可能只有3种）
+    "original_price": 3500,	// 原方案价格
+    "price_difference": 7000,	//	优化前后价格差异 
+    "is_saving": false,	// 是否节省了价格
+    "best_price": 10500,	// 最优价格
+    "original_loss": 3,	// 原方案兵力损失
+    "loss_difference": 2,	// 优化前后兵力损失差异
+    "best_loss": 5,	// 最少损失兵力
+    "is_saving_loss": false,	// 是否节省了兵力损失
+    "original_bingli": 30,	// 原方案出动兵力
+    "bingli_difference": 20,		// 优化前后出动兵力差异
+    "best_bingli": 10,	// 最少出动兵力
+    "is_saving_bingli": true,	// 是否节省了出动兵力
+    "opt_type": 2,	// 优化类型 (透传)
+    "solutions": [	// 优化方案
+      {
+        "sort": 1,	// 最优排序
+        "total_price": 10500,	// 总价
+        "price_difference": 7000,	// 价格差异
+        "is_saving": false,	// 是否节省
+        "total_loss": 5,	// 总损
+        "loss_difference": 2,	// 损差异
+        "is_saving_loss": false,	// 是否节省
+        "total_bingli": 10,	// 总出动兵力
+        "bingli_difference": 20,	// 兵力差异
+        "is_saving_bingli": true,	// 是否节省
+        "strategy_details": [	// 替换详情
+          {
+            "from_strategy_id": 1,	// 原策略ID
+            "from_army_id": 100,	// 原分队ID
+            "to_strategy_id": 3,	// 替换到的策略ID
+            "to_army_id": 100,	// 替换到的分队ID
+            "from_strategy_details": {	// 原策略详情（基本上与入参一致，加了几个字段）
+              "aircraft": [
+                {
+                  "aircraft_type": 10001,
+                  "count": 30,
+                  "price": 1000
+                }
+              ],
+              "ammunition": [
+                {
+                  "ammunition_type": 1000,
+                  "count": 1,
+                  "price": 500
+                }
+              ],
+              "price": 3500,	// 当前策略价格
+              "time_range": {
+                "start": 0,
+                "end": 90
+              },
+              "aircraft_loss": [	// 当前策略的损失
+                {
+                  "aircraft_type": 10001,
+                  "count": 3
+                }
+              ],
+              "total_aircraft_loss": 3,	// 不考虑飞机类型的总损失数量
+              "penetration_rate": 0.9,	
+              "total_bingli": 30	// 当前策略的总出动兵力
+            },
+            "to_strategy_details": {	// 与from_strategy_details结构相同
+              "aircraft": [
+                {
+                  "aircraft_type": 10003,
+                  "count": 10,
+                  "price": 2000
+                }
+              ],
+              "ammunition": [
+                {
+                  "aircraft_type": 1000,
+                  "count": 1,
+                  "price": 500
+                }
+              ],
+              "price": 10500,
+              "time_range": {
+                "start": 0,
+                "end": 90
+              },
+              "aircraft_loss": [
+                {
+                  "aircraft_type": 10003,
+                  "count": 5
+                }
+              ],
+              "total_aircraft_loss": 5,
+              "penetration_rate": 0.9,
+              "total_bingli": 10
+            },
+            "price_difference": 7000,	// 当前策略替换前后，价格差异
+            "is_saving": false,	// 当前策略替换前后，是否节省
+            "loss_difference": 2,	// 当前策略替换前后，兵力损失数量差异
+            "is_saving_loss": false,	// 当前策略替换前后，是否节省
+            "bingli_difference": 20,	// 当前策略替换前后，兵力出动数量差异
+            "is_saving_bingli": true,	// 当前策略替换前后，是否节省
+            "desc": "在阶段[10]中，用分队[100]执行任务[1]替换为用分队[100]执行任务[3]，减少20兵力派遣"
+          }
+        ],
+        "resource_usage": [	// 本替换方案的总资源使用情况
+          {
+            "army_id": 100,	// 分队ID
+            "aircraft": [	// 分队载机使用情况
+              {
+                "aircraft_type": 10001,
+                "total": 30,	// 总
+                "used": 0,	// 出动了多少架次
+                "loss": 0,	// 损失了多少架
+                "remaining": 30	// 剩余多少架
+              },
+              {
+                "aircraft_type": 10002,
+                "total": 20,
+                "used": 0,
+                "loss": 0,
+                "remaining": 20
+              },
+              {
+                "aircraft_type": 10003,
+                "total": 10,
+                "used": 10,
+                "loss": 5,
+                "remaining": 5
+              }
+            ],
+            "ammunition": [	// 分队弹使用情况
+              {
+                "ammunition_type": 1000,
+                "total": 12,	// 总
+                "used": 1,	// 用了多少
+                "remaining": 11	// 剩余多少
+              }
+            ]
+          }
+        ],
+        "replacement_type": 1,	// 0-原方案未优化 1-已优化方案
+        "replacement_desc": "已优化方案"
+      },
+      ...
+    ]
+  }
+}
+```
+
+
+
+### ~~版本：第二次对接 [待集成]~~
 > 涉及版本：
 > * 20250421-出动bingli最少优化
 > * 20250420-效损比优化
