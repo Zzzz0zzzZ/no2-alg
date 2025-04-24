@@ -1,0 +1,112 @@
+{
+  "opt_type": 2,
+  "strategies": [
+    {
+      "strategy_id": 1,
+      "replaceable": true,
+      "army_init": 100,
+      "aircraft": [{
+        "aircraft_type": 10001,
+        "count": 30,
+        "price": 1000
+      }],
+      "ammunition": [{
+        "ammunition_type": 1000,
+        "count": 1,
+        "price": 500
+      }],
+      "time_range": {
+        "start": 0,
+        "end":  90
+      },
+      "penetration_rate": 0.9
+    },
+    {
+      "strategy_id": 2,
+      "replaceable": false,
+      "army_init": null,
+      "aircraft": [
+          {
+              "aircraft_type": 10002,
+              "count": 20,
+              "price": 500
+          }
+      ],
+      "ammunition": [
+          {
+              "ammunition_type": 1000,
+              "count": 1,
+              "price": 500
+          }
+      ],
+      "time_range": {
+          "start": null,
+          "end": null
+      },
+      "penetration_rate": 0.8
+  },
+  {
+      "strategy_id": 3,
+      "replaceable": false,
+      "army_init": null,
+      "aircraft": [
+          {
+              "aircraft_type": 10003,
+              "count": 10,
+              "price": 2000
+          }
+      ],
+      "ammunition": [
+          {
+              "ammunition_type": 1000,
+              "count": 1,
+              "price": 500
+          }
+      ],
+      "time_range": {
+          "start": null,
+          "end": null
+      },
+      "penetration_rate": 0.5
+  }],
+  "actions": [
+        {
+            "action_id": 10,
+            "strategies": [1]
+        }
+    ],
+    "replacement_options": [
+        {
+            "original_strategy": 1,
+            "replacement_strategies": [2, 3]
+        }
+    ],
+    "stage": [10],
+    "armies": [
+        {
+            "army_id": 100,
+            "aircraft": [
+                {
+                    "aircraft_type": 10001,
+                    "count": 30
+                },
+                {
+                    "aircraft_type": 10002,
+                    "count": 20
+                },
+                {
+                    "aircraft_type": 10003,
+                    "count": 10
+                }
+            ],
+            "ammunition": [
+                {
+                    "ammunition_type": 1000,
+                    "count": 12
+                }
+            ]
+        }
+    ],
+  "time_limit": 60,
+  "solution_count": 3
+}

@@ -77,3 +77,74 @@ class OptimizeDTO(BaseModel):
     solution_count: Optional[int]  # 返回几种优化方案
     time_limit: Optional[int]  # 算法执行时间限制
     opt_type: Optional[OptimizationType] = OptimizationType.PRICE  # 优化类型，默认为价格优化
+
+
+########## 2024.04.24 改接口输入格式为TestCaseNewDTO，在apicall.py中会转换为原TestCaseDTO格式 ###########
+class AircraftNew(BaseModel):
+    aircraft_type: int
+    count: int
+    price: int
+
+
+class AmmunitionNew(BaseModel):
+    ammunition_type: int
+    count: int
+    price: int
+
+
+class TimeRange(BaseModel):
+    start: Optional[int] = None
+    end: Optional[int] = None
+
+
+class StrategyNew(BaseModel):
+    strategy_id: int
+    replaceable: bool
+    army_init: Optional[int] = None
+    aircraft: List[AircraftNew]
+    ammunition: List[AmmunitionNew]
+    time_range: Optional[TimeRange] = None
+    penetration_rate: Optional[float] = 0.8
+
+    @validator('penetration_rate')
+    def validate_penetration_rate(cls, v):
+        if not 0 <= v <= 1:
+            raise ValueError('突防率必须在0到1之间')
+        return v
+
+
+class ActionNew(BaseModel):
+    action_id: int
+    strategies: List[int]
+
+
+class ReplacementOptionNew(BaseModel):
+    original_strategy: int
+    replacement_strategies: List[int]
+
+
+class AircraftResourceNew(BaseModel):
+    aircraft_type: int
+    count: int
+
+
+class AmmunitionResourceNew(BaseModel):
+    ammunition_type: int
+    count: int
+
+
+class ArmyNew(BaseModel):
+    army_id: int
+    aircraft: List[AircraftResourceNew]
+    ammunition: List[AmmunitionResourceNew]
+
+
+class TestCaseNewDTO(BaseModel):
+    strategies: List[StrategyNew]
+    actions: List[ActionNew]
+    replacement_options: List[ReplacementOptionNew]
+    armies: List[ArmyNew]
+    stage: Optional[List[int]] = []
+    time_limit: Optional[int] = None
+    solution_count: Optional[int] = None
+    opt_type: Optional[OptimizationType] = OptimizationType.PRICE

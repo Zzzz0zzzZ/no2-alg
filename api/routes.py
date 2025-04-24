@@ -1,4 +1,5 @@
 # coding=utf-8
+import logging
 import traceback
 
 from fastapi import APIRouter
@@ -9,7 +10,7 @@ from core import apicall as alg
 
 # 创建路由器
 router = APIRouter()
-
+logger = logging.getLogger("api")
 
 # 根路径重定向到API文档
 @router.get("/")
@@ -19,8 +20,9 @@ async def root():
 
 # 优化接口 - test_case_new_1.json格式数据
 @router.post("/alg/optimize", response_model=CommonResponse)
-async def optimize(data: TestCaseDTO):
+async def optimize(data: TestCaseNewDTO):
     try:
+        logger.info(f"请求入参: {data}")
         # 调用优化算法
         res = alg.apicall(data)
 

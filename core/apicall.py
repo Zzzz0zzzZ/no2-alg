@@ -3,7 +3,8 @@ import time
 from enum import IntEnum
 from typing import Dict
 
-from api.models import OptimizeDTO, TestCaseDTO, Constraints, OptimizationType
+from api.models import OptimizeDTO, Constraints, OptimizationType, TestCaseNewDTO
+from core.converter import convert_to_old_format
 from core.preprocessor import generate_army_specific_strategies
 from core.genetic_strategy_optimization import Strategy, Action, ActionList, run_optimize
 
@@ -13,13 +14,12 @@ ALG_SEPARATOR = '~~~###~~~'
 # 定义替换类型枚举
 class ReplacementType(IntEnum):
     ORIGINAL = 0  # 原方案
-    OPTIMIZED_PRICE_SAVED = 1  # 优化后方案，价格节省
-    OPTIMIZED_SAME_PRICE = 2  # 优化后方案，价格不变，兵力派遣改变
+    OPTIMIZED = 1  # 已优化
 
 
-def apicall(data: TestCaseDTO) -> Dict:
+def apicall(data: TestCaseNewDTO) -> Dict:
     """
-    API调用入口，处理TestCaseDTO输入，根据策略库扩充分队级策略，并调用优化算法
+    API调用入口，处理TestCaseNewDTO输入，转换为原来的TestCaseDTO，根据策略库扩充分队级策略，并调用优化算法
     
     Args:
         data: OptimizeDTO对象，包含任务、阶段和约束条件信息
@@ -30,6 +30,9 @@ def apicall(data: TestCaseDTO) -> Dict:
     Raises:
         ValueError: 当输入数据无效或不完整时抛出
     """
+
+    # 转为旧TestCaseDTO格式以适配算法入参
+    data = convert_to_old_format(data)
 
     # 校验原始草案中的行动，必须有time_range字段
     for action_id, strategy_ids in data.actions.items():
@@ -185,7 +188,8 @@ def apicall(data: TestCaseDTO) -> Dict:
 
     # 组装返回结果
     solutions = []
-    for idx, (combination, price, loss, bingli) in enumerate(zip(best_combinations, total_prices, total_losses, total_bingli)):
+    for idx, (combination, price, loss, bingli) in enumerate(
+            zip(best_combinations, total_prices, total_losses, total_bingli)):
         solution = {
             "sort": idx + 1,  # 排序号，从1开始
             "total_price": price,
@@ -198,12 +202,12 @@ def apicall(data: TestCaseDTO) -> Dict:
             "bingli_difference": abs(original_bingli - bingli),  # 兵力差异
             "is_saving_bingli": bingli < original_bingli,  # 是否节省兵力
             "strategy_details": [],
-            "resource_usage": {}  # 直接按军队分类的资源使用情况
+            "resource_usage": []  # 直接按军队分类的资源使用情况
         }
 
         # 计算资源使用情况
         # 按军队分类初始化资源使用情况结构
-        solution["resource_usage"] = {}  # 直接按军队分类的资源使用情况
+        solution["resource_usage"] = []
 
         # 提取所有军队ID
         army_ids = set()
@@ -216,31 +220,36 @@ def apicall(data: TestCaseDTO) -> Dict:
 
         # 初始化每个军队的资源使用情况
         for army_id in army_ids:
-            solution["resource_usage"][army_id] = {
-                "aircraft": {},
-                "ammunition": {}
+            army_resource = {
+                "army_id": int(army_id),
+                "aircraft": [],
+                "ammunition": []
             }
 
             # 初始化该军队的飞机资源
             for aircraft_type, total in data.constraints.aircraft.items():
                 if ALG_SEPARATOR in aircraft_type and aircraft_type.split(ALG_SEPARATOR)[1] == army_id:
                     resource_id = aircraft_type.split(ALG_SEPARATOR)[0]  # 提取资源基本ID
-                    solution["resource_usage"][army_id]["aircraft"][resource_id] = {
+                    army_resource["aircraft"].append({
+                        "aircraft_type": int(resource_id),
                         "total": total,
-                        "used": 0,     # 出动的数量
-                        "loss": 0,     # 损毁的数量
+                        "used": 0,  # 出动的数量
+                        "loss": 0,  # 损毁的数量
                         "remaining": total  # 剩余的数量（总的-损毁的）
-                    }
+                    })
 
             # 初始化该军队的弹药资源
             for ammo_type, total in data.constraints.ammunition.items():
                 if ALG_SEPARATOR in ammo_type and ammo_type.split(ALG_SEPARATOR)[1] == army_id:
                     resource_id = ammo_type.split(ALG_SEPARATOR)[0]  # 提取资源基本ID
-                    solution["resource_usage"][army_id]["ammunition"][resource_id] = {
+                    army_resource["ammunition"].append({
+                        "ammunition_type": int(resource_id),
                         "total": total,
                         "used": 0,
                         "remaining": total
-                    }
+                    })
+
+            solution["resource_usage"].append(army_resource)
 
         # 累计各类资源的使用情况
         for action in action_list.actions:
@@ -251,7 +260,7 @@ def apicall(data: TestCaseDTO) -> Dict:
 
                 # 获取任务的资源使用情况
                 aircraft_usage, ammunition_usage = strategy.get_resource_usage()
-                
+
                 # 获取任务的飞机损耗情况
                 aircraft_loss, _ = strategy.get_aircraft_loss()
 
@@ -262,20 +271,22 @@ def apicall(data: TestCaseDTO) -> Dict:
                         resource_id = resource_parts[0]
                         resource_army_id = resource_parts[1]
 
-                        # 确保该军队和资源存在
-                        if resource_army_id in solution["resource_usage"] and \
-                                resource_id in solution["resource_usage"][resource_army_id]["aircraft"]:
-                            # 更新出动数量
-                            solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["used"] += count
-                            
-                            # 计算并更新损毁数量
-                            loss_count = aircraft_loss.get(aircraft_type, 0)
-                            solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["loss"] += loss_count
-                            
-                            # 更新剩余数量（总的-损毁的）
-                            solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["remaining"] = \
-                                solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["total"] - \
-                                solution["resource_usage"][resource_army_id]["aircraft"][resource_id]["loss"]
+                        # 查找对应的军队资源
+                        for army_resource in solution["resource_usage"]:
+                            if army_resource["army_id"] == int(resource_army_id):
+                                # 查找对应的飞机类型
+                                for aircraft in army_resource["aircraft"]:
+                                    if aircraft["aircraft_type"] == int(resource_id):
+                                        # 更新出动数量
+                                        aircraft["used"] += count
+
+                                        # 计算并更新损毁数量
+                                        loss_count = aircraft_loss.get(aircraft_type, 0)
+                                        aircraft["loss"] += loss_count
+
+                                        # 更新剩余数量（总的-损毁的）
+                                        aircraft["remaining"] = aircraft["total"] - aircraft["loss"]
+                                        break
 
                 # 累计弹药使用情况
                 for ammo_type, count in ammunition_usage.items():
@@ -284,13 +295,15 @@ def apicall(data: TestCaseDTO) -> Dict:
                         resource_id = resource_parts[0]
                         resource_army_id = resource_parts[1]
 
-                        # 确保该军队和资源存在
-                        if resource_army_id in solution["resource_usage"] and \
-                                resource_id in solution["resource_usage"][resource_army_id]["ammunition"]:
-                            solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["used"] += count
-                            solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["remaining"] = \
-                                solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["total"] - \
-                                solution["resource_usage"][resource_army_id]["ammunition"][resource_id]["used"]
+                        # 查找对应的军队资源
+                        for army_resource in solution["resource_usage"]:
+                            if army_resource["army_id"] == int(resource_army_id):
+                                # 查找对应的弹药类型
+                                for ammo in army_resource["ammunition"]:
+                                    if ammo["ammunition_type"] == int(resource_id):
+                                        ammo["used"] += count
+                                        ammo["remaining"] = ammo["total"] - ammo["used"]
+                                        break
 
         # 添加任务替换详情
         for action in action_list.actions:
@@ -301,18 +314,26 @@ def apicall(data: TestCaseDTO) -> Dict:
                     # 计算原策略的飞机损耗
                     raw_from_aircraft_loss, from_total_loss = strategy.get_aircraft_loss()
                     # 处理原策略的飞机损耗信息，移除分隔符和军队信息
-                    from_aircraft_loss = {}
+                    from_aircraft_loss = []
                     for aircraft_type, loss_count in raw_from_aircraft_loss.items():
-                        resource_id = aircraft_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in aircraft_type else aircraft_type
-                        from_aircraft_loss[resource_id] = loss_count
-                    
+                        resource_id = aircraft_type.split(ALG_SEPARATOR)[
+                            0] if ALG_SEPARATOR in aircraft_type else aircraft_type
+                        from_aircraft_loss.append({
+                            "aircraft_type": int(resource_id),
+                            "count": loss_count
+                        })
+
                     # 计算替换策略的飞机损耗
                     raw_to_aircraft_loss, to_total_loss = replacement.get_aircraft_loss()
                     # 处理替换策略的飞机损耗信息，移除分隔符和军队信息
-                    to_aircraft_loss = {}
+                    to_aircraft_loss = []
                     for aircraft_type, loss_count in raw_to_aircraft_loss.items():
-                        resource_id = aircraft_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in aircraft_type else aircraft_type
-                        to_aircraft_loss[resource_id] = loss_count
+                        resource_id = aircraft_type.split(ALG_SEPARATOR)[
+                            0] if ALG_SEPARATOR in aircraft_type else aircraft_type
+                        to_aircraft_loss.append({
+                            "aircraft_type": int(resource_id),
+                            "count": loss_count
+                        })
 
                     # 分割策略ID和军队ID
                     from_parts = strategy.id.split(ALG_SEPARATOR) if ALG_SEPARATOR in strategy.id else [strategy.id,
@@ -327,43 +348,59 @@ def apicall(data: TestCaseDTO) -> Dict:
                     to_army_id = to_parts[1] if len(to_parts) > 1 else "未知军队"
 
                     # 处理原策略的资源信息，移除分隔符和军队信息
-                    from_aircraft = {}
-                    from_ammunition = {}
+                    from_aircraft = []
+                    from_ammunition = []
                     for aircraft_type, value in strategy.aircraft.items():
                         resource_id = aircraft_type.split(ALG_SEPARATOR)[
                             0] if ALG_SEPARATOR in aircraft_type else aircraft_type
-                        from_aircraft[resource_id] = value
+                        from_aircraft.append({
+                            "aircraft_type": int(resource_id),
+                            "count": value[0],
+                            "price": value[1]
+                        })
 
                     for ammo_type, value in strategy.ammunition.items():
                         resource_id = ammo_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in ammo_type else ammo_type
-                        from_ammunition[resource_id] = value
+                        from_ammunition.append({
+                            "ammunition_type": int(resource_id),
+                            "count": value[0],
+                            "price": value[1]
+                        })
 
                     # 处理替换策略的资源信息，移除分隔符和军队信息
-                    to_aircraft = {}
-                    to_ammunition = {}
+                    to_aircraft = []
+                    to_ammunition = []
                     for aircraft_type, value in replacement.aircraft.items():
                         resource_id = aircraft_type.split(ALG_SEPARATOR)[
                             0] if ALG_SEPARATOR in aircraft_type else aircraft_type
-                        to_aircraft[resource_id] = value
+                        to_aircraft.append({
+                            "aircraft_type": int(resource_id),
+                            "count": value[0],
+                            "price": value[1]
+                        })
 
                     for ammo_type, value in replacement.ammunition.items():
                         resource_id = ammo_type.split(ALG_SEPARATOR)[0] if ALG_SEPARATOR in ammo_type else ammo_type
-                        to_ammunition[resource_id] = value
+                        to_ammunition.append({
+                            "aircraft_type": int(resource_id),
+                            "count": value[0],
+                            "price": value[1]
+                        })
 
                     # 计算原策略和替换策略的兵力（出动飞机数量）
                     from_bingli = 0
                     to_bingli = 0
-                    
+
                     # 计算原策略的兵力
                     from_aircraft_usage, _ = strategy.get_resource_usage()
                     for _, count in from_aircraft_usage.items():
                         from_bingli += count
-                    
+
                     # 计算替换策略的兵力
                     to_aircraft_usage, _ = replacement.get_resource_usage()
                     for _, count in to_aircraft_usage.items():
                         to_bingli += count
-                    
+
                     # 计算兵力差异
                     bingli_diff = abs(from_bingli - to_bingli)
 
@@ -395,25 +432,31 @@ def apicall(data: TestCaseDTO) -> Dict:
                                         f"{price_diff}元"
 
                     detail = {
-                        "from_strategy_id": from_strategy_id,  # 分割后的策略ID
-                        "from_army_id": from_army_id,  # 分割后的军队ID
-                        "to_strategy_id": to_strategy_id,  # 分割后的策略ID
-                        "to_army_id": to_army_id,  # 分割后的军队ID
+                        "from_strategy_id": int(from_strategy_id),  # 分割后的策略ID
+                        "from_army_id": int(from_army_id),  # 分割后的军队ID
+                        "to_strategy_id": int(to_strategy_id),  # 分割后的策略ID
+                        "to_army_id": int(to_army_id),  # 分割后的军队ID
                         "from_strategy_details": {  # 添加原策略的详细信息（移除分隔符和军队信息）
                             "aircraft": from_aircraft,
                             "ammunition": from_ammunition,
                             "price": strategy.price,
-                            "time_range": strategy.time_range,
+                            "time_range": {
+                                "start": strategy.time_range[0],
+                                "end": strategy.time_range[1]
+                            },
                             "aircraft_loss": from_aircraft_loss,  # 添加飞机损耗信息
                             "total_aircraft_loss": from_total_loss,  # 添加总飞机损耗
-                            "penetration_rate": strategy.penetration_rate,   # 突防率(回传)
+                            "penetration_rate": strategy.penetration_rate,  # 突防率(回传)
                             "total_bingli": from_bingli  # 原策略的总兵力
                         },
                         "to_strategy_details": {  # 添加替换策略的详细信息（移除分隔符和军队信息）
                             "aircraft": to_aircraft,
                             "ammunition": to_ammunition,
                             "price": replacement.price,
-                            "time_range": replacement.time_range,
+                            "time_range": {
+                                "start": strategy.time_range[0],
+                                "end": strategy.time_range[1]
+                            },
                             "aircraft_loss": to_aircraft_loss,  # 添加飞机损耗信息
                             "total_aircraft_loss": to_total_loss,  # 添加总飞机损耗
                             "penetration_rate": strategy.penetration_rate,  # 突防率(回传)
@@ -433,15 +476,11 @@ def apicall(data: TestCaseDTO) -> Dict:
         if not solution["strategy_details"]:
             # 原方案
             solution["replacement_type"] = ReplacementType.ORIGINAL
-            solution["replacement_desc"] = "本方案为原方案，价格不变"
-        elif price == original_price:
-            # 优化后方案，价格不变，兵力派遣改变
-            solution["replacement_type"] = ReplacementType.OPTIMIZED_SAME_PRICE
-            solution["replacement_desc"] = "本方案为优化后方案，价格不变，兵力派遣改变"
+            solution["replacement_desc"] = "原方案"
         else:
-            # 优化后方案，价格节省
-            solution["replacement_type"] = ReplacementType.OPTIMIZED_PRICE_SAVED
-            solution["replacement_desc"] = f"本方案为优化后方案，价格节省{original_price - price}元，兵力派遣改变"
+            # 优化后方案
+            solution["replacement_type"] = ReplacementType.OPTIMIZED
+            solution["replacement_desc"] = "已优化方案"
 
         solutions.append(solution)
 
@@ -453,11 +492,11 @@ def apicall(data: TestCaseDTO) -> Dict:
         "is_saving": total_prices[0] < original_price,
         "best_price": total_prices[0],  # 第一个方案的价格就是最优价格
         "original_loss": original_loss,  # 原始飞机损失
-        "saved_loss": original_loss - total_losses[0],  # 节省的飞机损失
+        "loss_difference": abs(original_loss - total_losses[0]),  # 节省的飞机损失
         "best_loss": total_losses[0],  # 最优方案的飞机损失
         "is_saving_loss": total_losses[0] < original_loss,  # 是否节省飞机损失
         "original_bingli": original_bingli,  # 原始兵力
-        "saved_bingli": original_bingli - total_bingli[0],  # 节省的兵力
+        "bingli_difference": abs(original_bingli - total_bingli[0]),  # 节省的兵力
         "best_bingli": total_bingli[0],  # 最优方案的兵力
         "is_saving_bingli": total_bingli[0] < original_bingli,  # 是否节省兵力
         "opt_type": opt_type,  # 优化类型
