@@ -27,14 +27,24 @@ logger.propagate = False
 # 配置彩色日志处理器
 handler = colorlog.StreamHandler()
 handler.setFormatter(colorlog.ColoredFormatter(
-    '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    '%(log_color)s%(asctime)s - %(name)s - %(levelname)s%(reset)s%(message_log_color)s - %(message)s%(reset)s',
     log_colors={
         'DEBUG': 'cyan',
         'INFO': 'green',
         'WARNING': 'yellow',
         'ERROR': 'red',
         'CRITICAL': 'red,bg_white',
-    }
+    },
+    secondary_log_colors={
+        'message': {
+            'DEBUG': 'bold_white',
+            'INFO': 'bold_white',
+            'WARNING': 'bold_white',
+            'ERROR': 'bold_white',
+            'CRITICAL': 'bold_white',
+        }
+    },
+    reset=True
 ))
 logger.addHandler(handler)
 
@@ -42,6 +52,9 @@ logger.addHandler(handler)
 file_handler = logging.FileHandler('api.log')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(file_handler)
+
+# 关闭uvicorn的访问日志
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # 创建FastAPI应用
 app = FastAPI(title="行动优化算法API", description="行动优化算法API")
@@ -116,4 +129,11 @@ app.include_router(router)
 if __name__ == "__main__":
     workers_count = multiprocessing.cpu_count()  # 获取CPU核心数
     logger.info(f"Starting server with {workers_count // 4}/{workers_count} workers")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, workers=workers_count // 4)
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        workers=workers_count // 4,
+        log_level="info",
+        access_log=False  # 完全关闭访问日志
+    )

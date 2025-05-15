@@ -19,7 +19,28 @@
         "start": 0,
         "end":  90
       },
-      "penetration_rate": 0.9
+      "enemies": {
+        "air": [
+            {
+                "aircraft_type": 100001,
+                "count": 3
+            },
+            {
+                "aircraft_type": 100002,
+                "count": 5
+            }
+        ],
+        "ground": [
+            {
+                "ground_type": 200001,
+                "count": 2
+            },
+            {
+                "ground_type": 200002,
+                "count": 7
+            }
+        ]
+      }
     },
     {
       "strategy_id": 2,
@@ -42,8 +63,7 @@
       "time_range": {
           "start": null,
           "end": null
-      },
-      "penetration_rate": 0.8
+      }
   },
   {
       "strategy_id": 3,
@@ -66,8 +86,7 @@
       "time_range": {
           "start": null,
           "end": null
-      },
-      "penetration_rate": 0.5
+      }
   }],
   "actions": [
         {

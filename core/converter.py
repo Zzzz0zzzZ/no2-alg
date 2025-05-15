@@ -35,6 +35,30 @@ def convert_to_old_format(new_dto: TestCaseNewDTO) -> TestCaseDTO:
             if strategy.time_range.start is not None and strategy.time_range.end is not None:
                 time_range = [strategy.time_range.start, strategy.time_range.end]
         
+        # 转换 enemies
+        enemies = None
+        if strategy.enemies:
+            enemies = {
+                "air": [],
+                "ground": []
+            }
+            
+            # 转换空中敌人
+            if strategy.enemies.air:
+                for enemy in strategy.enemies.air:
+                    enemies["air"].append({
+                        "aircraft_type": str(enemy.aircraft_type),  # 将int转为str，与其他字段保持一致
+                        "count": enemy.count
+                    })
+            
+            # 转换地面敌人
+            if strategy.enemies.ground:
+                for enemy in strategy.enemies.ground:
+                    enemies["ground"].append({
+                        "ground_type": str(enemy.ground_type),  # 将int转为str，与其他字段保持一致
+                        "count": enemy.count
+                    })
+        
         # 将int类型的strategy_id转为str作为key
         strategies[str(strategy.strategy_id)] = Strategy(
             replaceable=strategy.replaceable,
@@ -42,7 +66,8 @@ def convert_to_old_format(new_dto: TestCaseNewDTO) -> TestCaseDTO:
             ammunition=ammunition,
             army_init=str(strategy.army_init) if strategy.army_init is not None else None,  # 将int转为str
             time_range=time_range,
-            penetration_rate=strategy.penetration_rate
+            penetration_rate=strategy.penetration_rate,
+            enemies=enemies
         )
     
     # 转换 actions

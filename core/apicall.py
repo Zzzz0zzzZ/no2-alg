@@ -7,6 +7,7 @@ from api.models import OptimizeDTO, Constraints, OptimizationType, TestCaseNewDT
 from core.converter import convert_to_old_format
 from core.preprocessor import generate_army_specific_strategies
 from core.genetic_strategy_optimization import Strategy, Action, ActionList, run_optimize
+from core.simulate import initialize_cache
 
 ALG_SEPARATOR = '~~~###~~~'
 
@@ -30,6 +31,8 @@ def apicall(data: TestCaseNewDTO) -> Dict:
     Raises:
         ValueError: 当输入数据无效或不完整时抛出
     """
+    # 每次API请求时强制重新初始化战斗参数缓存
+    initialize_cache(force_reload=True)
 
     # 转为旧TestCaseDTO格式以适配算法入参
     data = convert_to_old_format(data)
@@ -104,7 +107,7 @@ def apicall(data: TestCaseNewDTO) -> Dict:
     # 创建任务字典，将DTO中的任务数据转换为Strategy对象
     strategy_objects = {}
     for strategy_id, strategy_data in data.strategies.items():
-        # 在创建 Strategy 对象时添加 penetration_rate 字段
+        # 在创建 Strategy 对象时添加 penetration_rate 和 enemies 字段
         strategy_objects[strategy_id] = Strategy(
             id=strategy_id,
             replaceable=strategy_data.replaceable,
@@ -117,7 +120,8 @@ def apicall(data: TestCaseNewDTO) -> Dict:
                 for ammo_type, count_price in strategy_data.ammunition.items()
             },
             time_range=strategy_data.time_range if hasattr(strategy_data, 'time_range') else None,
-            penetration_rate=strategy_data.penetration_rate if hasattr(strategy_data, 'penetration_rate') else 0.8
+            penetration_rate=strategy_data.penetration_rate if hasattr(strategy_data, 'penetration_rate') else 1.0,
+            enemies=strategy_data.enemies if hasattr(strategy_data, 'enemies') else None
         )
 
     # 创建ActionList对象

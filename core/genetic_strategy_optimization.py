@@ -5,17 +5,22 @@ import os
 import math
 import random
 import time
+import logging
 
 import matplotlib.pyplot as plt  # 添加matplotlib库用于绘图
 from pylab import mpl
 from api.models import OptimizationType  # 导入优化类型枚举
+from core.simulate import calculate_aircraft_losses  # 导入模拟对战函数
+
+# 配置日志
+logger = logging.getLogger("api")
 
 # 设置显示中文字体
 mpl.rcParams["font.sans-serif"] = ["SimHei"]
 
 
 class Strategy:
-    def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0, time_range=None, penetration_rate=0.8):
+    def __init__(self, id, replaceable=False, aircraft=None, ammunition=None, price=0, time_range=None, penetration_rate=1.0, enemies=None):
         """
         初始化策略对象
         
@@ -26,14 +31,16 @@ class Strategy:
         ammunition: 字典，键为弹药种类，值为(数量, 单价)元组
         price: 策略总价格
         time_range: 策略的时间范围 [开始时间, 结束时间]
-        penetration_rate: 突防率，0.0~1.0之间，默认0.8
+        penetration_rate: 突防率，0.0~1.0之间，默认1.0（已废弃，仅为兼容保留）
+        enemies: 执行策略过程中遇到的敌人信息
         """
         self.id = id
         self.replaceable = replaceable
         self.aircraft = aircraft if aircraft else {}
         self.ammunition = ammunition if ammunition else {}
         self.time_range = time_range
-        self.penetration_rate = penetration_rate
+        self.penetration_rate = penetration_rate  # 已废弃，仅为兼容保留
+        self.enemies = enemies  # 新增：敌人信息
 
         # 如果没有提供价格，则根据载机损耗和弹药计算总价格
         if price == 0:
@@ -44,14 +51,15 @@ class Strategy:
     def calculate_price(self):
         """
         计算策略的总价格：飞机损耗价格 + 弹药价格
-        飞机损耗价格 = 飞机数量 * (1-突防率) * 单价，向上取整
+        飞机损耗价格 = 飞机单价 * 损失数量
         弹药价格 = 弹药数量 * 单价
         """
         # 计算飞机损耗价格
         aircraft_loss_price = 0
-        for aircraft_type, (count, price) in self.aircraft.items():
-            # 计算损耗数量，向上取整
-            loss_count = math.ceil(count * (1 - self.penetration_rate))
+        aircraft_losses, _ = self.get_aircraft_loss()
+        
+        for aircraft_type, loss_count in aircraft_losses.items():
+            _, price = self.aircraft[aircraft_type]
             aircraft_loss_price += loss_count * price
         
         # 计算弹药价格
@@ -76,19 +84,20 @@ class Strategy:
         获取策略执行时的飞机损耗情况
         
         返回:
-        aircraft_loss: 字典，键为载机种类，值为损耗数量（向上取整）
+        aircraft_loss: 字典，键为载机种类，值为损耗数量
         total_loss: 总损耗数量
         """
-        aircraft_loss = {}
-        total_loss = 0
+        # 创建一个包含完整策略信息的字典，用于传递给calculate_aircraft_losses函数
+        strategy_data = {
+            'aircraft': self.aircraft,
+            'enemies': self.enemies,
+            'penetration_rate': self.penetration_rate  # 当enemies为空时使用
+        }
         
-        for aircraft_type, (count, _) in self.aircraft.items():
-            # 计算损耗数量，向上取整
-            loss_count = math.ceil(count * (1 - self.penetration_rate))
-            aircraft_loss[aircraft_type] = loss_count
-            total_loss += loss_count
-            
-        return aircraft_loss, total_loss
+        # 调用模拟对战函数计算损失
+        aircraft_losses, total_loss = calculate_aircraft_losses(strategy_data)
+        
+        return aircraft_losses, total_loss
 
     def __str__(self):
         return f"Strategy {self.id} (价格: {self.price}, 可替换: {self.replaceable})"
@@ -214,10 +223,10 @@ class ActionList:
                 exceeded_resources.append(f"弹药 {ammo_type}: {count}/{ammunition_constraints[ammo_type]}")
 
         if resource_exceeded:
-            print("警告: 初始方案已超出资源约束限制:")
+            logger.debug("警告: 初始方案已超出资源约束限制:")
             for resource in exceeded_resources:
-                print(f"  - {resource}")
-            print("尝试寻找满足约束的替换方案...")
+                logger.debug(f"  - {resource}")
+            logger.debug("尝试寻找满足约束的替换方案...")
 
         # 获取所有可替换策略
         replaceable_strategies = []
@@ -228,7 +237,7 @@ class ActionList:
 
         # 如果没有可替换策略，直接返回初始方案
         if not replaceable_strategies:
-            print("没有可替换的策略，保持原方案不变")
+            logger.debug("没有可替换的策略，保持原方案不变")
             return {}, [initial_price], [initial_loss], [initial_usage]
 
         # 使用遗传算法找出最优替换方案
@@ -250,61 +259,61 @@ class ActionList:
 
         # 检查是否找到了满足约束的方案
         if not best_combinations or total_prices[0] == float('inf'):
-            print("无法找到满足所有资源约束的方案。")
+            logger.debug("无法找到满足所有资源约束的方案。")
             return [], [], [], []
         else:
             if resource_exceeded:
                 # 检查是否真的找到了新的替换方案
                 if not best_combinations[0]:
-                    print("无法找到满足资源约束的替换方案。")
+                    logger.debug("无法找到满足资源约束的替换方案。")
                     return [], [], [], []
                 else:
-                    print(f"找到{len(best_combinations)}个满足资源约束的替换方案:")
+                    logger.debug(f"找到{len(best_combinations)}个满足资源约束的替换方案:")
                     for i, (combination, price, loss, usage) in enumerate(
                             zip(best_combinations, total_prices, total_losses, total_usages), 1):
-                        print(f"\n方案 {i}:")
+                        logger.debug(f"\n方案 {i}:")
                         
                         if opt_type == OptimizationType.AIRCRAFT_LOSS:
-                            print(f"总飞机损失: {loss} 架")
+                            logger.debug(f"总飞机损失: {loss} 架")
                             if loss < initial_loss:
-                                print(f"比原方案减少: {initial_loss - loss} 架")
+                                logger.debug(f"比原方案减少: {initial_loss - loss} 架")
                             else:
-                                print(f"比原方案增加: {loss - initial_loss} 架")
-                            print(f"总价格: {price}")
-                            print(f"总出动飞机数量: {usage} 架")
+                                logger.debug(f"比原方案增加: {loss - initial_loss} 架")
+                            logger.debug(f"总价格: {price}")
+                            logger.debug(f"总出动飞机数量: {usage} 架")
                         elif opt_type == OptimizationType.AIRCRAFT_USAGE:
-                            print(f"总出动飞机数量: {usage} 架")
+                            logger.debug(f"总出动飞机数量: {usage} 架")
                             if usage < initial_usage:
-                                print(f"比原方案减少: {initial_usage - usage} 架")
+                                logger.debug(f"比原方案减少: {initial_usage - usage} 架")
                             else:
-                                print(f"比原方案增加: {usage - initial_usage} 架")
-                            print(f"总价格: {price}")
-                            print(f"总飞机损失: {loss} 架")
+                                logger.debug(f"比原方案增加: {usage - initial_usage} 架")
+                            logger.debug(f"总价格: {price}")
+                            logger.debug(f"总飞机损失: {loss} 架")
                         else:
-                            print(f"总价格: {price}")
+                            logger.debug(f"总价格: {price}")
                             if price < initial_price:
-                                print(f"比原方案节省: {initial_price - price}")
+                                logger.debug(f"比原方案节省: {initial_price - price}")
                             else:
-                                print(f"比原方案增加: {price - initial_price}")
-                            print(f"总飞机损失: {loss} 架")
-                            print(f"总出动飞机数量: {usage} 架")
+                                logger.debug(f"比原方案增加: {price - initial_price}")
+                            logger.debug(f"总飞机损失: {loss} 架")
+                            logger.debug(f"总出动飞机数量: {usage} 架")
 
                         # 打印替换方案详情
-                        print("\n替换方案详情:")
+                        logger.debug("\n替换方案详情:")
                         for action in self.actions:
-                            print(f"行动 {action.id}:")
+                            logger.debug(f"行动 {action.id}:")
                             for strategy in action.strategies:
                                 if strategy.replaceable and strategy.id in combination:
                                     replacement = combination[strategy.id]
-                                    print(
+                                    logger.debug(
                                         f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price}, 飞机损失: {replacement.get_aircraft_loss()[1]})")
                                 else:
                                     _, loss_count = strategy.get_aircraft_loss()
-                                    print(
+                                    logger.debug(
                                         f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}, 飞机损失: {loss_count}")
 
                         # 打印资源使用情况
-                        print("\n资源使用情况:")
+                        logger.debug("\n资源使用情况:")
                         total_aircraft_usage = {}
                         total_ammunition_usage = {}
                         total_aircraft_loss = {}
@@ -328,53 +337,53 @@ class ActionList:
                                 for ammo_type, count in ammunition_usage.items():
                                     total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
 
-                        print("载机使用:")
+                        logger.debug("载机使用:")
                         for aircraft_type, count in total_aircraft_usage.items():
                             loss = total_aircraft_loss.get(aircraft_type, 0)
-                            print(
+                            logger.debug(
                                 f"  - {aircraft_type}: 使用 {count}/{aircraft_constraints.get(aircraft_type, '无限制')}, 损失 {loss} 架")
 
-                        print("弹药使用:")
+                        logger.debug("弹药使用:")
                         for ammo_type, count in total_ammunition_usage.items():
-                            print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
+                            logger.debug(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
             else:
                 if (opt_type == OptimizationType.PRICE and total_prices[0] < initial_price) or \
                         (opt_type == OptimizationType.AIRCRAFT_LOSS and total_losses[0] < initial_loss) or \
                         (opt_type == OptimizationType.AIRCRAFT_USAGE and total_usages[0] < initial_usage):
-                    print(f"找到{len(best_combinations)}个更优方案:")
+                    logger.debug(f"找到{len(best_combinations)}个更优方案:")
                     for i, (combination, price, loss, usage) in enumerate(
                             zip(best_combinations, total_prices, total_losses, total_usages), 1):
-                        print(f"\n方案 {i}:")
+                        logger.debug(f"\n方案 {i}:")
 
                         if opt_type == OptimizationType.AIRCRAFT_LOSS:
-                            print(f"总飞机损失: {loss} 架，减少: {initial_loss - loss} 架")
-                            print(f"总价格: {price}")
-                            print(f"总出动飞机数量: {usage} 架")
+                            logger.debug(f"总飞机损失: {loss} 架，减少: {initial_loss - loss} 架")
+                            logger.debug(f"总价格: {price}")
+                            logger.debug(f"总出动飞机数量: {usage} 架")
                         elif opt_type == OptimizationType.AIRCRAFT_USAGE:
-                            print(f"总出动飞机数量: {usage} 架，减少: {initial_usage - usage} 架")
-                            print(f"总价格: {price}")
-                            print(f"总飞机损失: {loss} 架")
+                            logger.debug(f"总出动飞机数量: {usage} 架，减少: {initial_usage - usage} 架")
+                            logger.debug(f"总价格: {price}")
+                            logger.debug(f"总飞机损失: {loss} 架")
                         else:
-                            print(f"总价格: {price}，节省: {initial_price - price}")
-                            print(f"总飞机损失: {loss} 架")
-                            print(f"总出动飞机数量: {usage} 架")
+                            logger.debug(f"总价格: {price}，节省: {initial_price - price}")
+                            logger.debug(f"总飞机损失: {loss} 架")
+                            logger.debug(f"总出动飞机数量: {usage} 架")
 
                         # 打印替换方案详情
-                        print("\n替换方案详情:")
+                        logger.debug("\n替换方案详情:")
                         for action in self.actions:
-                            print(f"行动 {action.id}:")
+                            logger.debug(f"行动 {action.id}:")
                             for strategy in action.strategies:
                                 if strategy.replaceable and strategy.id in combination:
                                     replacement = combination[strategy.id]
-                                    print(
+                                    logger.debug(
                                         f"  - 策略 {strategy.id} 替换为 {replacement.id} (价格: {replacement.price}, 飞机损失: {replacement.get_aircraft_loss()[1]})")
                                 else:
                                     _, loss_count = strategy.get_aircraft_loss()
-                                    print(
+                                    logger.debug(
                                         f"  - {strategy} {'(不可替换)' if not strategy.replaceable else '(未替换)'}, 飞机损失: {loss_count}")
 
                         # 打印资源使用情况
-                        print("\n资源使用情况:")
+                        logger.debug("\n资源使用情况:")
                         total_aircraft_usage = {}
                         total_ammunition_usage = {}
                         total_aircraft_loss = {}
@@ -398,17 +407,17 @@ class ActionList:
                                 for ammo_type, count in ammunition_usage.items():
                                     total_ammunition_usage[ammo_type] = total_ammunition_usage.get(ammo_type, 0) + count
 
-                        print("载机使用:")
+                        logger.debug("载机使用:")
                         for aircraft_type, count in total_aircraft_usage.items():
                             loss = total_aircraft_loss.get(aircraft_type, 0)
-                            print(
+                            logger.debug(
                                 f"  - {aircraft_type}: 使用 {count}/{aircraft_constraints.get(aircraft_type, '无限制')}, 损失 {loss} 架")
 
-                        print("弹药使用:")
+                        logger.debug("弹药使用:")
                         for ammo_type, count in total_ammunition_usage.items():
-                            print(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
+                            logger.debug(f"  - {ammo_type}: {count}/{ammunition_constraints.get(ammo_type, '无限制')}")
                 else:
-                    print("未找到更优方案，保持原方案不变")
+                    logger.debug("未找到更优方案，保持原方案不变")
 
         return best_combinations, total_prices, total_losses, total_usages
 
@@ -592,7 +601,7 @@ class ActionList:
 
             # 检查是否达到时间限制
             if time_limit is not None and time.time() - start_time >= time_limit:
-                print(f"达到时间限制 {time_limit} 秒，提前结束迭代")
+                logger.debug(f"达到时间限制 {time_limit} 秒，提前结束迭代")
                 break
 
             # 判断是否可以提前终止迭代
@@ -604,21 +613,21 @@ class ActionList:
                                 abs(data[1] - best_losses[0]) < 0.001 * best_losses[0] if data[1] is not None else False
                                 for data in convergence_data[-30:]
                         ):
-                            print("最近30代无显著改进，提前结束迭代")
+                            logger.debug("最近30代无显著改进，提前结束迭代")
                             break
                     elif opt_type == OptimizationType.AIRCRAFT_USAGE:
                         if all(
                                 abs(data[1] - best_usages[0]) < 0.001 * best_usages[0] if data[1] is not None else False
                                 for data in convergence_data[-30:]
                         ):
-                            print("最近30代无显著改进，提前结束迭代")
+                            logger.debug("最近30代无显著改进，提前结束迭代")
                             break
                     else:
                         if all(
                                 abs(data[1] - best_prices[0]) < 0.001 * best_prices[0] if data[1] is not None else False
                                 for data in convergence_data[-30:]
                         ):
-                            print("最近30代无显著改进，提前结束迭代")
+                            logger.debug("最近30代无显著改进，提前结束迭代")
                             break
 
             # 选择精英个体
@@ -672,7 +681,7 @@ class ActionList:
         """
         generations = [data[0] for data in convergence_data]
         values = [data[1] for data in convergence_data]
-        print("迭代轮次: ", len(generations))
+        logger.debug("迭代轮次: ", len(generations))
 
         # 处理无效解（值为None的情况）
         valid_gens = []
@@ -723,7 +732,7 @@ class ActionList:
             filename = 'convergence_curve_price.png'
 
         plt.savefig(os.path.join(output_dir, filename))
-        print(f"收敛曲线已保存至: {os.path.join(output_dir, filename)}")
+        logger.debug(f"收敛曲线已保存至: {os.path.join(output_dir, filename)}")
         plt.close()
 
     def _initialize_population(self, replaceable_strategies, population_size):
@@ -1011,7 +1020,7 @@ def load_test_case(file_path):
                 if strategy_id in strategies:
                     action.add_strategy(strategies[strategy_id])
                 else:
-                    print(f"警告: 策略 {strategy_id} 未在策略列表中定义")
+                    logger.debug(f"警告: 策略 {strategy_id} 未在策略列表中定义")
             actions[action_id] = action
 
         # 创建作战行动清单
@@ -1033,7 +1042,7 @@ def load_test_case(file_path):
         return action_list, aircraft_constraints, ammunition_constraints
 
     except Exception as e:
-        print(f"加载测试用例 {file_path} 时出错: {e}")
+        logger.debug(f"加载测试用例 {file_path} 时出错: {e}")
         return None, None, None
 
 
@@ -1059,7 +1068,7 @@ def run_optimize(action_list, aircraft_constraints, ammunition_constraints, plot
         time_limit=time_limit,
         opt_type=opt_type
     )
-    print("-" * 50)
+    logger.debug("-" * 50)
     return best_combinations, total_prices, total_losses, total_usages
 
 
@@ -1072,12 +1081,12 @@ def run_test_case(file_path, plot_convergence=True):
     file_path: 测试用例文件路径
     plot_convergence: 是否绘制收敛曲线
     """
-    print(f"\n运行测试用例: {os.path.basename(file_path)}")
-    print("-" * 50)
+    logger.debug(f"\n运行测试用例: {os.path.basename(file_path)}")
+    logger.debug("-" * 50)
 
     action_list, aircraft_constraints, ammunition_constraints = load_test_case(file_path)
     if not action_list or not aircraft_constraints or not ammunition_constraints:
-        print(f"无法加载测试用例: {file_path}")
+        logger.debug(f"无法加载测试用例: {file_path}")
         return
 
     # 调用优化算法
@@ -1093,10 +1102,10 @@ def main():
     test_case_files = glob.glob(os.path.join(test_case_dir, '*.json'))
 
     if not test_case_files:
-        print(f"未找到测试用例文件，请确保 {test_case_dir} 目录下有 .json 文件")
+        logger.debug(f"未找到测试用例文件，请确保 {test_case_dir} 目录下有 .json 文件")
         return
 
-    print(f"找到 {len(test_case_files)} 个测试用例文件")
+    logger.debug(f"找到 {len(test_case_files)} 个测试用例文件")
 
     # 添加命令行参数解析
     import argparse
@@ -1113,4 +1122,4 @@ if __name__ == "__main__":
     start_time = time.time()
     main()
     end_time = time.time()
-    print(f"程序执行时间: {end_time - start_time} s")
+    logger.debug(f"程序执行时间: {end_time - start_time} s")

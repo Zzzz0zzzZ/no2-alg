@@ -181,6 +181,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
         # army_init = strategy.get('army_init', 'army1')
         is_replaceable = strategy.get('replaceable', False)  # 默认不可替换
         time_range = strategy.get('time_range', None)  # 获取时间范围
+        enemies = strategy.get('enemies', None)  # 获取敌人信息
     
         if not is_replaceable:
             if strategy_id in non_replaceable_strategies:
@@ -209,6 +210,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                     if 'penetration_rate' in strategy:
                         new_strategy['penetration_rate'] = strategy['penetration_rate']
                     
+                    # 透传 enemies 字段
+                    if enemies:
+                        new_strategy['enemies'] = enemies
+                    
                     # 添加到新测试用例中
                     new_test_case['strategies'][new_strategy_id] = new_strategy
             else:
@@ -234,6 +239,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                         # 透传 penetration_rate 字段 --- 突防率
                         if 'penetration_rate' in strategy:
                             other_new_strategy['penetration_rate'] = strategy['penetration_rate']
+    
+                        # 透传 enemies 字段
+                        if enemies:
+                            other_new_strategy['enemies'] = enemies
     
                         # 添加到新测试用例中
                         new_test_case['strategies'][new_strategy_id] = other_new_strategy
@@ -268,6 +277,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                 # 透传 penetration_rate 字段 --- 突防率
                 if 'penetration_rate' in strategy:
                     new_strategy['penetration_rate'] = strategy['penetration_rate']
+                
+                # 透传 enemies 字段
+                if enemies:
+                    new_strategy['enemies'] = enemies
     
                 # 添加到新测试用例中
                 new_test_case['strategies'][new_strategy_id] = new_strategy
@@ -295,7 +308,19 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
     
                     # 非初始军队版本不可替换
                     other_new_strategy['replaceable'] = False
-    
+                    
+                    # 保留时间范围
+                    if time_range:
+                        other_new_strategy['time_range'] = time_range
+                    
+                    # 透传 penetration_rate 字段 --- 突防率
+                    if 'penetration_rate' in strategy:
+                        other_new_strategy['penetration_rate'] = strategy['penetration_rate']
+                    
+                    # 透传 enemies 字段
+                    if enemies:
+                        other_new_strategy['enemies'] = enemies
+
                     # 添加到新测试用例中
                     new_test_case['strategies'][new_strategy_id] = other_new_strategy
 
@@ -326,9 +351,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
             if (strategy.get('replaceable', True)):
                 army_init = strategy.get('army_init', 'army1')
     
-                # 获取原策略的时间范围
+                # 获取原策略的时间范围和敌人信息
                 original_time_range = strategy.get('time_range', None)
-    
+                original_enemies = strategy.get('enemies', None)
+
                 # 创建原策略的初始军队版本ID
                 init_strategy_id = f"{original_strategy_id}{ALG_SEPARATOR}{army_init}"
     
@@ -346,6 +372,7 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                             # 获取替换策略本身的信息
                             replacement_strategy = test_case['strategies'][replacement_id]
                             replacement_time_range = replacement_strategy.get('time_range', None)
+                            replacement_enemies = replacement_strategy.get('enemies', None)
                             
                             # 添加替换策略的所有其他可行军队版本
                             for version_id in replacement_versions:
@@ -354,6 +381,10 @@ def generate_army_specific_strategies(test_case_data, output_path=None):
                                     # 如果替换策略没有自己的时间范围，则使用原策略的时间范围
                                     if not replacement_time_range and original_time_range:
                                         new_test_case['strategies'][version_id]['time_range'] = original_time_range
+                                    
+                                    # 如果替换策略没有自己的敌人信息，则使用原策略的敌人信息
+                                    if not replacement_enemies and original_enemies:
+                                        new_test_case['strategies'][version_id]['enemies'] = original_enemies
                             
                                 new_test_case['replacement_options'][init_strategy_id].append(version_id)
 

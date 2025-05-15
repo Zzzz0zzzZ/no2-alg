@@ -35,7 +35,8 @@ class Strategy(BaseModel):
     ammunition: Dict[str, List[int]]  # 键为弹药类型，值为[数量, 单价]列表
     army_init: Optional[str] = None  # 策略初始军队 - 「只有原始草案中的策略携带该参数」
     time_range: Optional[List[int]] = None  # 策略的时间范围 [开始时间, 结束时间] - 「只有原始草案中的策略携带该参数」
-    penetration_rate: Optional[float] = 0.8  # 突防率，0.0~1.0之间，默认0.8
+    penetration_rate: Optional[float] = 1.0  # 突防率，0.0~1.0之间，默认1.0 - 废弃字段，将由算法根据enemies计算
+    enemies: Optional[Dict[str, List[Dict[str, Any]]]] = None  # 策略执行过程中遇到的敌人
     
     @validator('penetration_rate')
     def validate_penetration_rate(cls, v):
@@ -97,6 +98,21 @@ class TimeRange(BaseModel):
     end: Optional[int] = None
 
 
+class EnemyAircraft(BaseModel):
+    aircraft_type: int
+    count: int
+
+
+class EnemyGround(BaseModel):
+    ground_type: int
+    count: int
+
+
+class Enemies(BaseModel):
+    air: Optional[List[EnemyAircraft]] = []
+    ground: Optional[List[EnemyGround]] = []
+
+
 class StrategyNew(BaseModel):
     strategy_id: int
     replaceable: bool
@@ -104,13 +120,14 @@ class StrategyNew(BaseModel):
     aircraft: List[AircraftNew]
     ammunition: List[AmmunitionNew]
     time_range: Optional[TimeRange] = None
-    penetration_rate: Optional[float] = 0.8
+    penetration_rate: Optional[float] = 1.0  # 废弃字段，将由算法根据enemies计算
+    enemies: Optional[Enemies] = None  # 新增字段：策略执行过程中遇到的敌人
 
-    @validator('penetration_rate')
-    def validate_penetration_rate(cls, v):
-        if not 0 <= v <= 1:
-            raise ValueError('突防率必须在0到1之间')
-        return v
+    # @validator('penetration_rate')
+    # def validate_penetration_rate(cls, v):
+    #     if not 0 <= v <= 1:
+    #         raise ValueError('突防率必须在0到1之间')
+    #     return v
 
 
 class ActionNew(BaseModel):
