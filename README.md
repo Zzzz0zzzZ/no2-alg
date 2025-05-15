@@ -29,24 +29,212 @@
 
 2. **预处理阶段**:
    - 调用 `apicall.py` 中的 `apicall` 函数
-   - `apicall` 函数首先调用 `converter.py` ，将`TestCaseNewDTO`转换为`TestCaseDTO`
-   - 再调用 `preprocessor.py` 中的 `generate_army_specific_strategies` 函数
+   - `apicall` 函数首先调用 `converter.py` 中的 `convert_to_old_format` 函数，将`TestCaseNewDTO`转换为内部的`TestCaseDTO`
+   - 转换后，初始化战斗参数缓存，并校验原始草案中行动的时间范围
+   - 处理需要优化的阶段信息，如果指定了需要优化的阶段，将不在列表中的阶段的策略设置为不可替换
+   - 调用 `preprocessor.py` 中的 `generate_army_specific_strategies` 函数
    - 该函数根据策略库信息扩充分队级策略，处理分队资源约束
 
 3. **优化阶段**:
    - `apicall` 函数将预处理后的数据转换为 `OptimizeDTO` 对象
    - 创建 `Strategy` 对象和 `ActionList` 对象，构建算法入参
    - 调用 `genetic_strategy_optimization.py` 中的 `run_optimize` 函数
-   - 该函数使用遗传算法寻找最优策略组合
+   - 该函数使用遗传算法根据指定的优化类型(效费比、效损比或出动兵力最少)寻找最优策略组合
+   - 在计算策略的价格和损失时，通过 `simulate.py` 中的 `calculate_aircraft_losses` 函数模拟空中和地面作战，
+     计算不同策略的战损情况，考虑空中交战交换比和地面防空因素
 
 4. **结果处理阶段**:
    - `apicall` 函数处理优化结果，计算资源使用情况
-   - 生成详细的替换方案和描述
-   - 返回包含算法耗时、方案数量、最优价格和具体方案详情的结果
+   - 生成替换方案的详细描述
+   - 返回包含算法耗时、方案数量、最优价格/损失/兵力和具体方案详情的结果
 
 ## 核心接口 `/alg/optimize`
 
-### 版本：修改接口入参、反参格式 [待集成]
+### 版本：根据「空中力量」+「地面力量」计算战损
+
+#### 更新说明
+
+1. 战损不再根据 penetration_rate计算，而根据执行行动过程中可能遇到的敌人计算。**原字段penetration_rate删除。**
+2. 飞机交换比和地面防空力量的能力值，在数据库中配置。
+
+#### 接口变动
+
+* strategies列表内，每个strategy，增加enemies字段。
+
+> **注意：**
+>
+> **1. 原行动草案中的行动strategy，需要传enemies字段。如果enemies字段为空，则认为没有拦截力量。**
+>
+> **2. 行动的替换方案，即replacement_options中的替换列表中的行动replacement_strategies，可以不传enemies字段，会继承原行动草案中的enemies字段。**
+
+```python
+class EnemyAircraft(BaseModel):
+    aircraft_type: int
+    count: int
+
+class EnemyGround(BaseModel):
+    ground_type: int
+    count: int
+
+class Enemies(BaseModel):
+    air: Optional[List[EnemyAircraft]] = []
+    ground: Optional[List[EnemyGround]] = []
+
+# strategies下的每个strategy，增加enemies字段
+class StrategyNew(BaseModel):
+    strategy_id: int
+    replaceable: bool
+    army_init: Optional[int] = None
+    aircraft: List[AircraftNew]
+    ammunition: List[AmmunitionNew]
+    time_range: Optional[TimeRange] = None
+[-] penetration_rate: Optional[float] = 0.8  # 废弃字段，删除，将由算法根据enemies计算
+[+] enemies: Optional[Enemies] = None  # 新增字段：策略执行过程中遇到的敌人
+```
+
+「入参」
+
+```json
+{
+  "opt_type": 2,
+  "strategies": [
+    {
+      "strategy_id": 1,
+      "replaceable": true,
+      "army_init": 100,
+      "aircraft": [{
+        "aircraft_type": 10001,
+        "count": 30,
+        "price": 1000
+      }],
+      "ammunition": [{
+        "ammunition_type": 1000,
+        "count": 1,
+        "price": 500
+      }],
+      "time_range": {
+        "start": 0,
+        "end":  90
+      },
+      // 【新增字段】执行行动过程中，会遇到的敌人
+      "enemies": {
+        // 空中敌人(各种飞机型号等)
+        "air": [
+            {
+                "aircraft_type": 100001,
+                "count": 3,
+            },
+            {
+                "aircraft_type": 100002,
+                "count": 5,
+            }
+        ],
+        // 地面敌人(雷达、防空编队等)
+        "ground": [
+            {
+                "ground_type": 200001,  // 具体敌人的类型，可能有很多。这里只是举个例子。
+                "count": 2,
+            },
+            {
+                "ground_type": 200002,
+                "count": 7,
+            }
+        ]
+    },
+    {
+      "strategy_id": 2,
+      "replaceable": false,
+      "army_init": null,
+      "aircraft": [
+          {
+              "aircraft_type": 10002,
+              "count": 20,
+              "price": 500
+          }
+      ],
+      "ammunition": [
+          {
+              "ammunition_type": 1000,
+              "count": 1,
+              "price": 500
+          }
+      ],
+      "time_range": {
+          "start": null,
+          "end": null
+      }
+  },
+  {
+      "strategy_id": 3,
+      "replaceable": false,
+      "army_init": null,
+      "aircraft": [
+          {
+              "aircraft_type": 10003,
+              "count": 10,
+              "price": 2000
+          }
+      ],
+      "ammunition": [
+          {
+              "ammunition_type": 1000,
+              "count": 1,
+              "price": 500
+          }
+      ],
+      "time_range": {
+          "start": null,
+          "end": null
+      }
+  }],
+  "actions": [
+        {
+            "action_id": 10,
+            "strategies": [1]
+        }
+    ],
+    "replacement_options": [
+        {
+            "original_strategy": 1,
+            "replacement_strategies": [2, 3]
+        }
+    ],
+    "stage": [10],
+    "armies": [
+        {
+            "army_id": 100,
+            "aircraft": [
+                {
+                    "aircraft_type": 10001,
+                    "count": 30
+                },
+                {
+                    "aircraft_type": 10002,
+                    "count": 20
+                },
+                {
+                    "aircraft_type": 10003,
+                    "count": 10
+                }
+            ],
+            "ammunition": [
+                {
+                    "ammunition_type": 1000,
+                    "count": 12
+                }
+            ]
+        }
+    ],
+  "time_limit": 60,
+  "solution_count": 3
+}
+```
+
+「返回值」
+
+返回字段不变。
+
+### 版本：修改接口入参、反参格式 [已集成]
 
 #### 接口变动
 
